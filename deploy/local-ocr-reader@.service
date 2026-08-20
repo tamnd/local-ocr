@@ -1,0 +1,72 @@
+# A reader, named by its entry in models.toml.
+#
+#   sudo cp deploy/local-ocr-reader@.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now local-ocr-reader@reader-a
+#
+# Templated, so the bake off in M4 and the two readers of M6 are two more
+# instances rather than two more unit files. Which weights an instance loads,
+# which port it listens on and which flags it is served under all live in
+# models.toml, which is under version control; this file holds only the things
+# that are about the machine.
+
+[Unit]
+Description=local-ocr reader %i
+Documentation=https://github.com/tamnd/local-ocr
+After=network-online.target
+Wants=network-online.target
+
+# A reader that dies five times in five minutes is not going to come back by
+# being restarted a sixth time, and a restart loop on a card this size makes the
+# journal useless. Give up and leave the failure visible.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=gopher
+Group=gopher
+WorkingDirectory=/home/gopher/local-ocr
+
+# The venv is the serving stack: vLLM, torch, and this package installed into it
+# with -e. Named in full because a unit file has no PATH worth relying on.
+ExecStart=/home/gopher/local-ocr/.venv/bin/local-ocr serve %i \
+  --vllm /home/gopher/local-ocr/.venv/bin/vllm
+
+# WSL puts the driver's user mode libraries here and nowhere a loader would look
+# by default. Without this line torch finds no CUDA device and vLLM exits with a
+# message about no GPU, on a machine with a 4090 in it.
+Environment=LD_LIBRARY_PATH=/usr/lib/wsl/lib
+Environment=HF_HOME=/home/gopher/.cache/huggingface
+
+# vLLM turns pinned host memory off on WSL by default, because for years it was
+# not dependable there. Its V2 GPU model runner needs a unified virtual address
+# view of a pinned buffer, so with the default the engine dies during startup
+# with "UVA is not available" and the machine never serves a page.
+#
+# The kernel here is 6.18, far past the 4.19.121 that vLLM gates the support on,
+# and pinning was checked by hand before this line was written: a pinned tensor
+# reports is_pinned, copies to the card, and takes an accelerator view. Turned
+# on rather than routed around, because the alternative is the older runner.
+Environment=VLLM_WSL2_ENABLE_PIN_MEMORY=1
+
+# The weights are already downloaded and pinned by revision. Offline means a
+# hub that is slow, rate limiting or simply moved cannot turn a restart into a
+# thirty minute wait or, worse, a quiet download of different weights.
+Environment=HF_HUB_OFFLINE=1
+
+# vLLM shuts down cleanly on SIGINT and is noisy about SIGTERM. Long enough to
+# let it finish the page it is on and free the card, short enough that a hung
+# server does not hold up a reboot.
+KillSignal=SIGINT
+TimeoutStopSec=60
+
+# Loading and compiling takes minutes on a cold start. systemd's default would
+# call that a failed start and kill it halfway through.
+TimeoutStartSec=900
+
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

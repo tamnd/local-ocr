@@ -23,6 +23,26 @@ That is the exact shape the Go side builds, quoting and all. Every path is relat
 
 Anything not in that list of arguments is an error rather than an argument quietly ignored, so a future change on the Go side fails on the first batch instead of reading a thousand pages with the wrong settings.
 
+## The reader behind it
+
+`ocr-batch` talks to a model server over the OpenAI vision API and does not care which one, so the server is started separately and lives in its own configuration.
+
+```
+local-ocr serve --list          what the shortlist holds
+local-ocr serve reader-a        start one, replacing this process with vLLM
+local-ocr serve reader-a --print    the command line, without starting anything
+```
+
+The shortlist is `src/local_ocr/models.toml`: one table per candidate, holding the repository, a pinned revision, the port and the flags it is served under. Adding a candidate is an entry rather than a patch, and every revision is pinned because a reading is only comparable to another reading of the same weights.
+
+`deploy/local-ocr-reader@.service` runs that under systemd, templated on the entry name, so two readers side by side is two instances rather than two unit files.
+
+```
+sudo cp deploy/local-ocr-reader@.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now local-ocr-reader@reader-a
+```
+
 ## The invisible requirements
 
 Four things are not visible in the command line and all four matter.
@@ -54,6 +74,9 @@ The tests need no GPU. The reader is behind a protocol and the contract tests st
 src/local_ocr/batch.py       the protocol: walk, skip, lanes, timeout, atomic write
 src/local_ocr/cli.py         the command line, which is the contract
 src/local_ocr/backends/      one adapter per way of reading a page
+src/local_ocr/models.toml    the shortlist: repository, revision, port, flags
+src/local_ocr/serving.py     an entry in that file turned into a vLLM command line
+deploy/                      the systemd unit that runs one
 tests/test_go_contract.py    the command line the Go side builds, run for real
 ```
 
