@@ -1,0 +1,99 @@
+# The shortlist, as serving configuration.
+#
+# §02 of the spec picks four models and then says the survey has a shelf life
+# measured in weeks. This file is what makes that true rather than a hope: a
+# candidate is a table here with a repository, a pinned revision and the flags
+# it is served under, and `local-ocr eval --model <name>` prints the Bourbaki
+# numbers for it. Adding one is an entry, not a patch.
+#
+# Every revision is pinned. A model repository is a moving branch and a reading
+# is only comparable to another reading of the same weights, so a report that
+# names `reader-a` and no revision is a report about nothing in particular.
+#
+# The flags are §01's starting configuration and are not conclusions. The
+# benchmark sweeps max_num_seqs and the cache dtype and reports accepted pages
+# an hour, and whatever wins is edited here.
+#
+# One note on --gpu-memory-utilization, because the three numbers below do not
+# add to one and are not meant to. Reader A's 0.86 is its share with the card to
+# itself, which is what M1 and the M4 bake off give it. B and C carry the share
+# they take sitting beside something larger, because that is the job they are
+# for. M6 runs two at once and lowers A's entry to suit, and that is an edit to
+# this file rather than a flag hidden somewhere else.
+
+[reader-a]
+repo = "allenai/olmOCR-2-7B-1025-FP8"
+revision = "40bd7202494b8264ee17ada08b401b5aab7a9ce1"
+port = 8801
+what = """
+Reader A, the default. Qwen2.5-VL-7B trained with verifiable unit test rewards,
+whose authors report the largest gains in formulas, tables and multi column
+layout, which are the three places this corpus is hardest. FP8 weights, about
+8.5 GB, so a referee still fits beside it on 24 GB.
+"""
+# --max-model-len 16384: a 300 dpi Bourbaki page is 1831 by 2776, which is a
+#   large number of vision tokens before a word is generated, and a dense page
+#   answers in 1500 to 3000. This holds the 1400 token prompt, the image and a
+#   long answer without paying for context nothing uses.
+# --limit-mm-per-prompt {"image": 1}: one page per request, always. The queue, the
+#   acceptance rules and the page file are all per page, and two pages in one
+#   prompt would let a single bad answer poison both.
+# --gpu-memory-utilization 0.86 rather than 0.9: the vision encoder's
+#   activations are not in vLLM's KV budget and a full page is a large one.
+#   0.9 has been reported to trim outputs under load, and a trimmed page fails
+#   the short rule and is read again, so the aggressive setting costs
+#   throughput rather than gaining it.
+# No --kv-cache-dtype fp8_e4m3, which §01 started with and which had to go. On
+#   this card, with these weights and FlashInfer on sm89, it does not degrade the
+#   reading a little, it destroys it: the first page ever put through this server
+#   came back as "Cor. 82. The. 81. Example. 28). Assertion (i." and then
+#   "2.5.1.1." repeated until it hit the token limit, four thousand tokens of it,
+#   at temperature zero. The same page on the same server with the flag removed
+#   came back correct, in 793 tokens, matching the publisher's own text layer
+#   almost word for word. An FP8 model does not imply an FP8 KV cache.
+args = [
+  "--max-model-len", "16384",
+  "--max-num-seqs", "16",
+  "--limit-mm-per-prompt", '{"image": 1}',
+  "--gpu-memory-utilization", "0.86",
+  "--enable-prefix-caching",
+  "--enable-chunked-prefill",
+]
+
+[reader-b]
+repo = "opendatalab/MinerU2.5-2509-1.2B"
+revision = "main"
+port = 8802
+what = """
+Reader B, the fast one, and the natural referee. Top of OmniDocBench v1.6 and
+the best published formula CDM in the survey at 97.29. 1.2 B, so about 4 GB.
+It is architecturally unrelated to a Qwen2.5-VL derivative, which is the point
+of running it as the second opinion: two readers that share a base model share
+their mistakes.
+"""
+args = [
+  "--max-model-len", "16384",
+  "--max-num-seqs", "16",
+  "--limit-mm-per-prompt", '{"image": 1}',
+  "--gpu-memory-utilization", "0.30",
+  "--enable-prefix-caching",
+  "--enable-chunked-prefill",
+]
+
+[reader-c]
+repo = "PaddlePaddle/PaddleOCR-VL"
+revision = "main"
+port = 8803
+what = """
+Reader C, the multilingual one. 0.9 B, Apache-2.0, 109 languages, and a
+training set that explicitly included real world maths, synthetic equations,
+old fonts and historical documents. The first thing to try on Cyrillic and on
+Vietnamese, and the cheapest thing to keep resident.
+"""
+args = [
+  "--max-model-len", "16384",
+  "--max-num-seqs", "16",
+  "--limit-mm-per-prompt", '{"image": 1}',
+  "--gpu-memory-utilization", "0.25",
+  "--enable-prefix-caching",
+]

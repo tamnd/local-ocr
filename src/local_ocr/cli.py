@@ -19,10 +19,10 @@ import argparse
 import asyncio
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from local_ocr import __version__
+from local_ocr import __version__, serving
 from local_ocr import corpus as corpuslib
 from local_ocr.batch import DEFAULT_TIMEOUT, Options, Reader, run
 from local_ocr.corpus import NoCorpus
@@ -289,6 +289,72 @@ def golden_cmd(argv: Sequence[str]) -> int:
     return 0
 
 
+def _serve_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=f"{PROG} serve",
+        description="Start a shortlisted reader, or print the command line that would.",
+    )
+    parser.add_argument("name", nargs="?", default="", help="an entry in models.toml")
+    parser.add_argument("--list", action="store_true", help="what the shortlist holds")
+    parser.add_argument(
+        "--print",
+        dest="dry",
+        action="store_true",
+        help="print the command line and do not start anything",
+    )
+    parser.add_argument("--vllm", default="vllm", help="the binary, for a venv that is not on PATH")
+    return parser
+
+
+def serve_cmd(argv: Sequence[str], exec_: Callable[[str, list[str]], None] | None = None) -> int:
+    """Hand the process over to vLLM, rather than supervise it.
+
+    `os.execvp` replaces this process, so what systemd watches is the server
+    itself. A Python parent would be one more thing to get the signal handling
+    wrong in, and `Restart=on-failure` would then be restarting a wrapper whose
+    child had already gone. There is nothing here to keep running after the
+    command line is built, so nothing here keeps running.
+    """
+    args = _serve_parser().parse_args(list(argv))
+
+    if args.list:
+        for entry in serving.load().values():
+            pinned = "" if entry.pinned else ", unpinned"
+            print(f"{entry.name}: {entry.repo} on {entry.port}{pinned}")
+            for line in entry.what.split("\n"):
+                print(f"    {line}")
+        return 0
+
+    if not args.name:
+        print(f"{PROG}: serve needs a model name, or --list", file=sys.stderr)
+        return 2
+
+    try:
+        entry = serving.model(args.name)
+    except (serving.NoSuchModel, OSError) as err:
+        print(f"{PROG}: {err}", file=sys.stderr)
+        return 2
+
+    if not entry.pinned:
+        # Not fatal. reader-b and reader-c are unpinned today because their
+        # repositories publish no revision worth pinning to yet, and refusing to
+        # serve them would mean not measuring them at all. Said out loud so the
+        # report that follows is read with that in mind.
+        print(
+            f"{PROG}: {entry.name} is on {entry.revision}, so a report of this run "
+            "cannot be reproduced from the report alone",
+            file=sys.stderr,
+        )
+
+    command = entry.command(args.vllm)
+    if args.dry:
+        print(entry.shell(args.vllm))
+        return 0
+
+    (exec_ or os.execvp)(command[0], command)
+    return 1  # unreachable when execvp succeeds, which is the point of it
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in {"-V", "--version"}:
@@ -304,6 +370,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return evaluate_cmd(rest)
     if command == "golden":
         return golden_cmd(rest)
+    if command == "serve":
+        return serve_cmd(rest)
     print(f"{PROG}: no command {command!r}\n\n{_usage()}", file=sys.stderr)
     return 2
 
@@ -316,6 +384,7 @@ def _usage() -> str:
         "  ocr-batch <in> <out>   read a directory of page images into Markdown\n"
         "  eval --set S --readings D   judge readings against a golden set\n"
         "  golden draw|check|show      the four golden sets and their drift\n"
+        "  serve <model>          start a shortlisted reader under vLLM\n"
         "\n"
         f"{PROG} ocr-batch is a drop-in for the chatgpt-tool subcommand of the same\n"
         "name, so that the Bourbaki fleet can drive this machine with no change to\n"
