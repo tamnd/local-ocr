@@ -6,9 +6,11 @@ be wrong: what would have been executed.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from local_ocr import cli
+from local_ocr import cli, serving
 
 
 class Exec:
@@ -54,9 +56,16 @@ def test_no_name_at_all_is_refused_rather_than_defaulted() -> None:
 
 def test_an_unpinned_reader_starts_and_says_it_is_unpinned(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    # Every entry in the shipped file is pinned, which is the point of the file,
+    # so the unpinned case needs a shortlist written for it.
+    shortlist = tmp_path / "models.toml"
+    shortlist.write_text('[reader-x]\nrepo = "somewhere/something"\n', encoding="utf-8")
+    monkeypatch.setattr(serving, "MODELS", shortlist)
     ran = Exec()
-    assert cli.serve_cmd(["reader-b"], exec_=ran) == 1
+    assert cli.serve_cmd(["reader-x"], exec_=ran) == 1
     assert ran.command is not None
     assert "cannot be reproduced" in capsys.readouterr().err
 
@@ -70,7 +79,7 @@ def test_the_list_names_every_reader(capsys: pytest.CaptureFixture[str]) -> None
     ran = Exec()
     assert cli.serve_cmd(["--list"], exec_=ran) == 0
     out = capsys.readouterr().out
-    for name in ("reader-a", "reader-b", "reader-c"):
+    for name in ("reader-a", "reader-b", "reader-c", "reader-d", "reader-e"):
         assert name in out
     assert ran.command is None
 

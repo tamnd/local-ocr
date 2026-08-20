@@ -209,6 +209,32 @@ class TestReport:
         assert blob["model"] == "reader-a"
         assert (tmp_path / "reports" / "eval.md").read_text(encoding="utf-8").startswith("# ")
 
+    def test_the_rejections_say_which_rule_did_it(self):
+        # 11.5 per cent acceptance says a reader is unusable. One rule rejecting
+        # 177 of 200 pages says what to do about it.
+        report = self.build()
+        # The made up corpus is two pages, one read perfectly and one with no
+        # reading at all, and an empty answer is the leak rule's business.
+        assert report.rejections() == [("leak", 1)]
+
+    def test_a_reading_with_no_head_is_rejected_by_the_head_rule(self):
+        # Which is the whole of the first bake off run: 177 of 200 pages, one
+        # rule, everything else put together rejecting six.
+        report = evaluate.Report(set_name="golden-dev", model="reader-a")
+        report.results.append(evaluate.judge(page(), BODY, report.house))
+        assert dict(report.rejections())["head"] == 1
+
+    def test_an_accepted_page_is_in_no_rejection(self):
+        report = evaluate.Report(set_name="golden-dev", model="reader-a")
+        report.results.append(evaluate.judge(page(), READING, report.house))
+        assert report.rejections() == []
+        assert "Nothing was rejected" in report.to_markdown()
+
+    def test_the_rejections_reach_the_json_and_the_markdown(self):
+        report = self.build()
+        assert {"rule": "leak", "pages": 1} in report.to_json()["rejections"]
+        assert "Why pages were rejected" in report.to_markdown()
+
     def test_the_worst_pages_come_first(self):
         report = self.build()
         assert report.worst()[0].id == "alg-viii/0043"
