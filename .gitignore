@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Nothing large, nothing copyrighted, nothing with a key in it.
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+weights/
+work/
+out/
+reports/
+.env

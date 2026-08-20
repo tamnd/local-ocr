@@ -1,0 +1,51 @@
+[project]
+name = "local-ocr"
+version = "0.1.0"
+description = "Page transcription on one GPU, speaking the batch protocol the Bourbaki fleet already uses"
+readme = "README.md"
+authors = [{ name = "tamnd", email = "1218621+tamnd@users.noreply.github.com" }]
+requires-python = ">=3.12"
+
+# Nothing GPU shaped here on purpose. The serving stack is a service with its
+# own environment, not a dependency of this package, so the lock resolves on a
+# laptop with no CUDA and the evaluation code can be edited and tested there.
+dependencies = [
+    "httpx>=0.28",
+]
+
+[project.optional-dependencies]
+# The evaluation needs a LaTeX renderer to compute CDM. The batch path on the
+# reading machine has no business carrying one.
+eval = [
+    "pillow>=11",
+]
+
+[project.scripts]
+local-ocr = "local_ocr.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.14",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+# Matched to requires-python, so the fixes ruff applies are ones the minimum
+# interpreter can run.
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# Added to rather than started from everything and suppressed.
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gpu: needs a model server, skipped by default",
+]
+addopts = "-m 'not gpu'"

@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check --output-format=github .
+      - run: uv run ruff format --check .
+      # Catches the pull request that edits pyproject.toml without relocking,
+      # which is the single most common way two machines stop agreeing.
+      - run: uv lock --check
+      - run: uv run pytest -q
+
+  binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No weights, no page images, no PDFs. Weights live in a cache outside the
+      # tree and a model config names a pinned revision.
+      - name: nothing large is committed
+        run: |
+          big=$(find . -path ./.git -prune -o -type f -size +1M -print)
+          if [ -n "$big" ]; then echo "$big"; exit 1; fi
