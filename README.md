@@ -35,7 +35,9 @@ local-ocr serve reader-a --print    the command line, without starting anything
 
 The shortlist is `src/local_ocr/models.toml`: one table per candidate, holding the repository, a pinned revision, the port and the flags it is served under. Adding a candidate is an entry rather than a patch, and every revision is pinned because a reading is only comparable to another reading of the same weights.
 
-`deploy/local-ocr-reader@.service` runs that under systemd, templated on the entry name, so two readers side by side is two instances rather than two unit files.
+`deploy/local-ocr-reader@.service` runs that under systemd, templated on the entry name, so two readers side by side is two instances rather than two unit files. `deploy/venv.sh` builds the environment it runs in.
+
+vLLM is not a dependency of this project and is not in `pyproject.toml`, because it pulls a CUDA build of torch chosen by the driver on the machine and nothing in CI or on a laptop wants to resolve that. It follows that plain `uv sync` on the reader host removes it, so use `uv sync --inexact` there, or `deploy/venv.sh`. It is worth knowing what that mistake looks like, because it does not look like itself: the running server keeps answering, and then every request comes back 400 "cannot identify image file", because Pillow loads its PNG plugin on the first image and by then the files are gone. Two hundred pages were refused that way before anybody looked at what was installed.
 
 ```
 sudo cp deploy/local-ocr-reader@.service /etc/systemd/system/
@@ -89,7 +91,7 @@ src/local_ocr/backends/      one adapter per way of reading a page
 src/local_ocr/models.toml    the shortlist: repository, revision, port, flags
 src/local_ocr/serving.py     an entry in that file turned into a vLLM command line
 src/local_ocr/pageimages.py  a golden set rasterised the way the fleet rasterises
-deploy/                      the systemd unit that runs one
+deploy/                      the systemd unit that runs one, and the venv it needs
 tests/test_go_contract.py    the command line the Go side builds, run for real
 ```
 
