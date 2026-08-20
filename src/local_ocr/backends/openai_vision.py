@@ -65,7 +65,15 @@ class OpenAIVisionReader:
     # Transcription, not composition. There is nothing to be creative about, and
     # a nonzero temperature turns an already hard formula into a lottery.
     temperature: float = 0.0
-    max_tokens: int = 8192
+    # No bound on the answer by default, which is what an omitted max_tokens
+    # means: the server gives the page whatever is left of the window after the
+    # prompt and the image. A fixed number cannot be right for every reader.
+    # This was 8192, a comfortable ceiling for a 16384 window, and then
+    # DeepSeek-OCR arrived with a window of exactly 8192 and refused all two
+    # hundred pages, because asking for 8192 output tokens leaves nothing for
+    # the prompt. The runaway answer this bound was guarding against is still
+    # caught, by finish_reason below and by the per page timeout.
+    max_tokens: int | None = None
     _client: httpx.AsyncClient | None = field(default=None, init=False, repr=False)
 
     def client(self) -> httpx.AsyncClient:
@@ -77,10 +85,9 @@ class OpenAIVisionReader:
         return self._client
 
     async def read(self, image: Path, prompt: str) -> str:
-        body = {
+        body: dict[str, object] = {
             "model": self.model,
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
             "messages": [
                 {
                     "role": "user",
@@ -95,6 +102,8 @@ class OpenAIVisionReader:
                 }
             ],
         }
+        if self.max_tokens is not None:
+            body["max_tokens"] = self.max_tokens
         response = await self.client().post(
             "/chat/completions",
             json=body,
