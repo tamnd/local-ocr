@@ -16,8 +16,15 @@ dependencies = [
 [project.optional-dependencies]
 # The evaluation needs a LaTeX renderer to compute CDM. The batch path on the
 # reading machine has no business carrying one.
+#
+# matplotlib is the renderer: its mathtext engine lays a formula out and says
+# where every glyph landed, which is what metrics/cdm.py compares. rapidfuzz is
+# the edit distance; without it metrics/cer.py falls back to a pure Python table
+# that gives the same answer and takes seconds a page instead of microseconds.
 eval = [
     "pillow>=11",
+    "matplotlib>=3.9",
+    "rapidfuzz>=3.10",
 ]
 
 [project.scripts]
@@ -27,6 +34,11 @@ local-ocr = "local_ocr.cli:main"
 dev = [
     "pytest>=8.3",
     "ruff>=0.14",
+    # The eval extra as well, so that CI runs the formula comparison rather than
+    # skipping it. A metric nobody exercises is a metric that quietly rots, and
+    # these are the numbers the whole project is judged by.
+    "matplotlib>=3.9",
+    "rapidfuzz>=3.10",
 ]
 
 [build-system]
