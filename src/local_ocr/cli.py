@@ -23,7 +23,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from local_ocr import __version__
+from local_ocr import corpus as corpuslib
 from local_ocr.batch import DEFAULT_TIMEOUT, Options, Reader, run
+from local_ocr.corpus import NoCorpus
+from local_ocr.golden import Purpose
 
 PROG = "local-ocr"
 
@@ -168,6 +171,124 @@ def ocr_batch(argv: Sequence[str], reader: Reader | None = None) -> int:
     return 0 if summary.ok else 1
 
 
+def _eval_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=f"{PROG} eval",
+        description="Judge a directory of readings against a golden set.",
+    )
+    parser.add_argument("--set", dest="set_name", default="golden-dev", help="which golden set")
+    parser.add_argument(
+        "--readings", type=Path, required=True, help="directory of Markdown readings to judge"
+    )
+    parser.add_argument("--model", default="", help="name for the reader, recorded in the report")
+    parser.add_argument("--corpus", type=Path, default=None, help="a checkout of tamnd/bourbaki")
+    parser.add_argument("--json", dest="json_path", type=Path, default=None)
+    parser.add_argument("--markdown", dest="markdown_path", type=Path, default=None)
+    parser.add_argument(
+        "--purpose",
+        default="development",
+        choices=[p.value for p in Purpose],
+        help="what the numbers are for; the held out set only opens for a milestone",
+    )
+    parser.add_argument(
+        "--disagreements",
+        type=Path,
+        default=None,
+        help="also write the adjudication work list here",
+    )
+    parser.add_argument(
+        "--drift",
+        type=Path,
+        default=None,
+        help="page ids extract drift has already flagged, one to a line",
+    )
+    return parser
+
+
+def evaluate_cmd(argv: Sequence[str]) -> int:
+    from local_ocr import disagree, evaluate, golden
+
+    args = _eval_parser().parse_args(list(argv))
+    try:
+        report = evaluate.evaluate(
+            args.set_name,
+            args.readings,
+            purpose=golden.Purpose(args.purpose),
+            model=args.model,
+            corpus=args.corpus,
+        )
+    except (golden.Burned, KeyError, NoCorpus) as err:
+        print(f"{PROG}: {err}", file=sys.stderr)
+        return 2
+
+    evaluate.write(report, json_path=args.json_path, markdown_path=args.markdown_path)
+    if args.markdown_path is None:
+        print(report.to_markdown())
+
+    if args.disagreements is not None:
+        drift = _drift(args.drift)
+        pages = golden.load(args.set_name, purpose=golden.Purpose(args.purpose), corpus=args.corpus)
+        work = disagree.Work()
+        for page in pages:
+            path = evaluate.find_reading(args.readings, page.id)
+            text = path.read_text(encoding="utf-8") if path is not None else ""
+            work.items.extend(disagree.classify(page, text, drift=drift))
+        args.disagreements.parent.mkdir(parents=True, exist_ok=True)
+        args.disagreements.write_text(work.to_markdown(), encoding="utf-8")
+        print(f"{len(work.items)} disagreements, written to {args.disagreements}", file=sys.stderr)
+    return 0
+
+
+def _drift(path: Path | None) -> list[str]:
+    if path is None:
+        return []
+    return [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").split("\n")
+        if line.strip() and not line.startswith("#")
+    ]
+
+
+def golden_cmd(argv: Sequence[str]) -> int:
+    """`golden draw` and `golden check`, which are deliberately separate.
+
+    Drawing rewrites the manifests and is done once. Checking says how far the
+    corpus has moved under them since, and is safe to run whenever.
+    """
+    from local_ocr import golden
+
+    parser = argparse.ArgumentParser(prog=f"{PROG} golden")
+    parser.add_argument("action", choices=["draw", "check", "show"])
+    parser.add_argument("--corpus", type=Path, default=None)
+    parser.add_argument("--name", default="", help="for show, which set to list")
+    args = parser.parse_args(list(argv))
+
+    if args.action == "show":
+        if not args.name:
+            for entry in golden.SETS.values():
+                held = ", held out" if entry.held_out else ""
+                print(f"{entry.name}: tier {entry.tier}, {entry.size} pages{held}")
+            return 0
+        for page_id in golden.read_manifest(args.name):
+            print(page_id)
+        return 0
+
+    try:
+        corpus = corpuslib.root(args.corpus)
+    except NoCorpus as err:
+        print(f"{PROG}: {err}", file=sys.stderr)
+        return 2
+
+    if args.action == "check":
+        for drift in golden.check(corpus):
+            print(drift.line())
+        return 0
+
+    for path in golden.write_manifests(golden.draw(corpus)):
+        print(path)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in {"-V", "--version"}:
@@ -179,6 +300,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     command, rest = argv[0], argv[1:]
     if command == "ocr-batch":
         return ocr_batch(rest)
+    if command == "eval":
+        return evaluate_cmd(rest)
+    if command == "golden":
+        return golden_cmd(rest)
     print(f"{PROG}: no command {command!r}\n\n{_usage()}", file=sys.stderr)
     return 2
 
@@ -189,10 +314,15 @@ def _usage() -> str:
         "\n"
         "commands:\n"
         "  ocr-batch <in> <out>   read a directory of page images into Markdown\n"
+        "  eval --set S --readings D   judge readings against a golden set\n"
+        "  golden draw|check|show      the four golden sets and their drift\n"
         "\n"
         f"{PROG} ocr-batch is a drop-in for the chatgpt-tool subcommand of the same\n"
         "name, so that the Bourbaki fleet can drive this machine with no change to\n"
         "its own transport. See spec 2028 section 04.\n"
+        "\n"
+        "eval needs a checkout of tamnd/bourbaki, found through BOURBAKI_CORPUS or\n"
+        "given with --corpus. Nothing in this repository copies pages out of it.\n"
     )
 
 
