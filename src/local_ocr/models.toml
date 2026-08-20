@@ -117,8 +117,14 @@ page detection in the survey. One independent OmniDocBench run puts it ahead of
 olmOCR 2 and blind preference voting puts it behind, which is the disagreement
 the bake off exists to settle on Bourbaki pages rather than on invoices.
 """
+# --max-model-len 8192 and not 16384 like the rest. This model's config.json
+#   gives max_position_embeddings 8192, and vLLM refuses to start above it
+#   rather than start and produce nan, which is the right refusal. The optical
+#   compression is what makes 8192 enough: a page costs 64 to 400 vision tokens
+#   here against several thousand for reader-a, so the window holds the prompt,
+#   the page and a long answer with room to spare.
 args = [
-  "--max-model-len", "16384",
+  "--max-model-len", "8192",
   "--max-num-seqs", "16",
   "--limit-mm-per-prompt", '{"image": 1}',
   "--gpu-memory-utilization", "0.80",
@@ -136,7 +142,15 @@ and reported to beat olmOCR 2 in 55.2 per cent of blind arena matchups. The
 repository moved from rednote-hilab to dots-studio, which is one more reason
 every entry here carries a revision rather than a branch.
 """
+# --trust-remote-code, which none of the others need. vLLM has native support
+#   for the rest, and this repository ships its own modelling code that the
+#   loader has to import, so without the flag the server will not start at all.
+#   The flag means the weights get to run Python on this machine, and the only
+#   thing making that a considered risk rather than a shrug is the pinned
+#   revision above: it is a fixed tree that can be read, not a branch that can
+#   change under a restart.
 args = [
+  "--trust-remote-code",
   "--max-model-len", "16384",
   "--max-num-seqs", "16",
   "--limit-mm-per-prompt", '{"image": 1}',

@@ -107,6 +107,29 @@ class TestRead:
         assert head == "data:image/png;base64"
         assert base64.b64decode(payload) == PAGE
 
+    def test_no_answer_length_is_asked_for_unless_one_is_set(self, image: Path) -> None:
+        # Asking for a fixed number of output tokens is asking the server to
+        # reject the page whenever that number is most of its window, which is
+        # how DeepSeek-OCR, whose window is 8192, refused two hundred pages.
+        seen: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.update(json.loads(request.content))
+            return answer("read")
+
+        asyncio.run(reader_answering(handler).read(image, "Read this page."))
+        assert "max_tokens" not in seen
+
+    def test_a_bound_is_sent_when_one_is_asked_for(self, image: Path) -> None:
+        seen: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.update(json.loads(request.content))
+            return answer("read")
+
+        asyncio.run(reader_answering(handler, max_tokens=4096).read(image, "Read this page."))
+        assert seen["max_tokens"] == 4096
+
     def test_an_error_is_a_refusal_that_says_what_the_server_said(self, image: Path) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
