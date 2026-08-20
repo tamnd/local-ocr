@@ -26,6 +26,31 @@ REFUSALS = (
 )
 
 
+def why(response: httpx.Response) -> str:
+    """What the server said, rather than what its status code was.
+
+    httpx raises "Client error '400 Bad Request' for url ...", which is the same
+    sentence whatever went wrong, and a batch log full of it says only that two
+    hundred pages failed. The server's own message is the useful part: the one
+    that produced this function read "Failed to load image: cannot identify
+    image file", which is a sentence somebody can act on.
+    """
+    text = response.text.strip()
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict) and error.get("message"):
+            text = str(error["message"])
+        elif isinstance(error, str):
+            text = error
+        elif payload.get("message"):
+            text = str(payload["message"])
+    return f"HTTP {response.status_code}: {text[:400]}" if text else f"HTTP {response.status_code}"
+
+
 def _data_url(image: Path) -> str:
     kind, _ = mimetypes.guess_type(image.name)
     payload = base64.b64encode(image.read_bytes()).decode("ascii")
@@ -75,7 +100,8 @@ class OpenAIVisionReader:
             json=body,
             headers={"Authorization": f"Bearer {self.api_key}"},
         )
-        response.raise_for_status()
+        if response.is_error:
+            raise Refused(why(response))
         payload = response.json()
         choices = payload.get("choices") or []
         if not choices:
