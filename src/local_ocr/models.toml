@@ -14,12 +14,18 @@
 # benchmark sweeps max_num_seqs and the cache dtype and reports accepted pages
 # an hour, and whatever wins is edited here.
 #
-# One note on --gpu-memory-utilization, because the three numbers below do not
-# add to one and are not meant to. Reader A's 0.86 is its share with the card to
+# One note on --gpu-memory-utilization, because the numbers below do not add to
+# one and are not meant to. Reader A's 0.86 is its share with the card to
 # itself, which is what M1 and the M4 bake off give it. B and C carry the share
 # they take sitting beside something larger, because that is the job they are
 # for. M6 runs two at once and lowers A's entry to suit, and that is an edit to
 # this file rather than a flag hidden somewhere else.
+#
+# The revisions are the ones on the hub in August 2026, taken from the API
+# rather than from a model card. Two of them are worth knowing about. dots.ocr
+# moved from rednote-hilab to dots-studio, and MinerU2.5's card says AGPL-3.0
+# where the survey expected an Apache based licence. Both are reasons to write
+# down what was actually served.
 
 [reader-a]
 repo = "allenai/olmOCR-2-7B-1025-FP8"
@@ -62,14 +68,16 @@ args = [
 
 [reader-b]
 repo = "opendatalab/MinerU2.5-2509-1.2B"
-revision = "main"
+revision = "1aa090b41282e64fadd79c10572221f91ec21924"
 port = 8802
 what = """
 Reader B, the fast one, and the natural referee. Top of OmniDocBench v1.6 and
 the best published formula CDM in the survey at 97.29. 1.2 B, so about 4 GB.
 It is architecturally unrelated to a Qwen2.5-VL derivative, which is the point
 of running it as the second opinion: two readers that share a base model share
-their mistakes.
+their mistakes. The licence on the card is AGPL-3.0 and not the Apache based
+licence the survey expected, which is a reason to keep it as a referee rather
+than let it become the default.
 """
 args = [
   "--max-model-len", "16384",
@@ -82,7 +90,7 @@ args = [
 
 [reader-c]
 repo = "PaddlePaddle/PaddleOCR-VL"
-revision = "main"
+revision = "7fa00a8c55b735ba51ba49a9058f3f9c57a99a11"
 port = 8803
 what = """
 Reader C, the multilingual one. 0.9 B, Apache-2.0, 109 languages, and a
@@ -96,4 +104,62 @@ args = [
   "--limit-mm-per-prompt", '{"image": 1}',
   "--gpu-memory-utilization", "0.25",
   "--enable-prefix-caching",
+]
+
+[reader-d]
+repo = "deepseek-ai/DeepSeek-OCR"
+revision = "9f30c71f441d010e5429c532364a86705536c53a"
+port = 8804
+what = """
+Reader D, the cheap one. Optical compression, 64 to 400 vision tokens a page
+against several thousand for a 7 B reader, MIT, about 8 GB, and the best blank
+page detection in the survey. One independent OmniDocBench run puts it ahead of
+olmOCR 2 and blind preference voting puts it behind, which is the disagreement
+the bake off exists to settle on Bourbaki pages rather than on invoices.
+"""
+args = [
+  "--max-model-len", "16384",
+  "--max-num-seqs", "16",
+  "--limit-mm-per-prompt", '{"image": 1}',
+  "--gpu-memory-utilization", "0.80",
+  "--enable-prefix-caching",
+  "--enable-chunked-prefill",
+]
+
+[reader-e]
+repo = "dots-studio/dots.ocr"
+revision = "c0111ce6bc07803dbc267932ffef0ae3a51dc951"
+port = 8805
+what = """
+Reader E, the multilingual layout one. 3 B, MIT, trained to handle any script,
+and reported to beat olmOCR 2 in 55.2 per cent of blind arena matchups. The
+repository moved from rednote-hilab to dots-studio, which is one more reason
+every entry here carries a revision rather than a branch.
+"""
+args = [
+  "--max-model-len", "16384",
+  "--max-num-seqs", "16",
+  "--limit-mm-per-prompt", '{"image": 1}',
+  "--gpu-memory-utilization", "0.80",
+  "--enable-prefix-caching",
+  "--enable-chunked-prefill",
+]
+
+[reader-a-bf16]
+repo = "allenai/olmOCR-2-7B-1025"
+revision = "e52d6f090b7a9007afffbbd6ce510876222fea93"
+port = 8806
+what = """
+Reader A at BF16, which is here for one benchmark and not as a candidate. §01
+asks what the FP8 weights cost in accuracy, and the only way to answer that is
+to read the same 200 pages with the same prompt at BF16. About 15 GB, so it has
+the card to itself while it runs.
+"""
+args = [
+  "--max-model-len", "16384",
+  "--max-num-seqs", "16",
+  "--limit-mm-per-prompt", '{"image": 1}',
+  "--gpu-memory-utilization", "0.86",
+  "--enable-prefix-caching",
+  "--enable-chunked-prefill",
 ]

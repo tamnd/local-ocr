@@ -36,6 +36,7 @@ from local_ocr.rules.validate import (
     Grammar,
     parse_page_label,
     reasons,
+    rules_of,
     validate,
 )
 
@@ -172,6 +173,8 @@ class PageResult:
     """The acceptance rules that rejected it, as one line, empty when it passed."""
     broke: list[str]
     """The house rules that applied to this page and were not obeyed."""
+    rejected_by: list[str] = field(default_factory=list)
+    """The acceptance rules that rejected it, by name, empty when it passed."""
     failure: str = ""
     """Why there was no reading at all, empty when there was one."""
 
@@ -231,6 +234,22 @@ class Report:
             return 0.0
         return sum(1 for r in self.results if r.accepted) / len(self.results)
 
+    def rejections(self) -> list[tuple[str, int]]:
+        """Which acceptance rules rejected pages, and how many each.
+
+        A first read acceptance of 11.5 per cent says a reader is unusable and
+        nothing about why. On the first real run of this harness, 177 of the 200
+        pages were rejected by one rule, the running head, and everything else
+        put together rejected six. That is a different piece of news from a
+        reader that is wrong in nine ways, and the report has to be able to tell
+        them apart. A page rejected by two rules is counted under both.
+        """
+        counts: dict[str, int] = {}
+        for result in self.results:
+            for rule in result.rejected_by:
+                counts[rule] = counts.get(rule, 0) + 1
+        return sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+
     def worst(self, n: int = 10) -> list[PageResult]:
         """The pages to look at first, which is the point of running this."""
         return sorted(self.results, key=lambda r: -r.prose.rate)[:n]
@@ -257,6 +276,7 @@ class Report:
                 "accepted": sum(1 for r in self.results if r.accepted),
                 "of": len(self.results),
             },
+            "rejections": [{"rule": rule, "pages": count} for rule, count in self.rejections()],
             "conformance": [
                 {
                     "rule": count.name,
@@ -312,6 +332,17 @@ class Report:
         for count in self.house.rows():
             rate = f"{count.rate:.1%}" if count.rate is not None else "did not apply"
             out.append(f"| {count.name} | {rate} | {count.applicable} |")
+        out.append("")
+        out.append("## Why pages were rejected")
+        out.append("")
+        rejections = self.rejections()
+        if not rejections:
+            out.append("Nothing was rejected.")
+        else:
+            out.append("| Acceptance rule | Pages it rejected |")
+            out.append("| --- | --- |")
+            for rule, count in rejections:
+                out.append(f"| {rule} | {count} |")
         out.append("")
         out.append("## Worst pages by prose CER")
         out.append("")
@@ -373,6 +404,7 @@ def judge(page: corpuslib.Page, read: str, house: conformance.Conformance) -> Pa
         formulas=cdm.compare_pages(reference, body),
         accepted=not problems,
         problems=reasons(problems),
+        rejected_by=[str(rule) for rule in rules_of(problems)],
         broke=house.observe(conformance_reference(page), as_written),
     )
 

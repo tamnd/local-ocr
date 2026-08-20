@@ -109,11 +109,18 @@ class TestTheShippedShortlist:
         entries = serving.load()
         assert "reader-a" in entries
 
-    def test_the_default_reader_is_pinned(self):
-        # reader-b and reader-c are not, and that is recorded rather than fixed:
-        # their repositories publish no revision worth pinning to yet. The one
-        # that reads the corpus has no such excuse.
-        assert serving.load()["reader-a"].pinned
+    def test_every_reader_is_pinned(self):
+        # Not just the default. dots.ocr moved repository between the survey and
+        # the bake off, from rednote-hilab to dots-studio, which is what a branch
+        # name is worth as a record of what was served.
+        for entry in serving.load().values():
+            assert entry.pinned, entry.name
+
+    def test_a_revision_is_a_full_commit_and_not_a_short_one(self):
+        # A short sha is ambiguous in principle and, more to the point, it is
+        # what somebody types from memory. These are copied from the hub API.
+        for entry in serving.load().values():
+            assert len(entry.revision) == 40, entry.name
 
     def test_no_two_readers_share_a_port(self):
         # All three are meant to be able to sit on the card at once for the bake
