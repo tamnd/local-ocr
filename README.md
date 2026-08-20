@@ -43,6 +43,18 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now local-ocr-reader@reader-a
 ```
 
+## The pages to read
+
+The bake off scores every model on the same 200 pages, the `golden-dev` set drawn from six volumes, so those pages have to exist as images before any of it means anything.
+
+```
+local-ocr pages --set golden-dev --dpi 300
+```
+
+That builds the same command the corpus builds, `pdftoppm -png -r 300 -gray -f N -l N`, and writes to the same place under the same four digit name, so a bake off page is the page the fleet would have sent and not a page rendered some other way. It exists because `bourbaki render` refuses to rasterise a born digital volume, which is right for the corpus and wrong here: a page with a perfect text layer is the most valuable page in a golden set, because the answer is already written down.
+
+A page already on disk at the dpi asked for is left alone. A page on disk at any other dpi is rendered again and reported, which is not a hypothetical. Two `lie-vii-ix` pages in `golden-dev` were sitting at 600 dpi from an old fleet retry, and a run that read them would have scored some models on one page and the rest on another. Images are never committed, on either side.
+
 ## The invisible requirements
 
 Four things are not visible in the command line and all four matter.
@@ -76,6 +88,7 @@ src/local_ocr/cli.py         the command line, which is the contract
 src/local_ocr/backends/      one adapter per way of reading a page
 src/local_ocr/models.toml    the shortlist: repository, revision, port, flags
 src/local_ocr/serving.py     an entry in that file turned into a vLLM command line
+src/local_ocr/pageimages.py  a golden set rasterised the way the fleet rasterises
 deploy/                      the systemd unit that runs one
 tests/test_go_contract.py    the command line the Go side builds, run for real
 ```

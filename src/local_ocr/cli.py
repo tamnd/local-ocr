@@ -22,7 +22,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from local_ocr import __version__, serving
+from local_ocr import __version__, pageimages, serving
 from local_ocr import corpus as corpuslib
 from local_ocr.batch import DEFAULT_TIMEOUT, Options, Reader, run
 from local_ocr.corpus import NoCorpus
@@ -289,6 +289,47 @@ def golden_cmd(argv: Sequence[str]) -> int:
     return 0
 
 
+def _pages_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=f"{PROG} pages",
+        description="Rasterise the pages of a golden set, ready to be read.",
+    )
+    parser.add_argument("--set", dest="set_name", default="golden-dev", help="which golden set")
+    parser.add_argument("--dpi", type=int, default=pageimages.DEFAULT_DPI)
+    parser.add_argument("--corpus", type=Path, default=None, help="a checkout of tamnd/bourbaki")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="re-render pages already on disk, which is how a dpi change takes effect",
+    )
+    return parser
+
+
+def pages_cmd(argv: Sequence[str]) -> int:
+    """Rasterise a golden set, and say what it could not do.
+
+    A page that cannot be rendered is a page missing from every model's score,
+    so this exits non zero and names each one rather than reporting a round
+    number of successes.
+    """
+    args = _pages_parser().parse_args(list(argv))
+    try:
+        corpus = corpuslib.root(args.corpus)
+        ids = pageimages.read_ids(args.set_name)
+    except (NoCorpus, FileNotFoundError) as err:
+        print(f"{PROG}: {err}", file=sys.stderr)
+        return 2
+
+    built = pageimages.build(ids, corpus, dpi=args.dpi, overwrite=args.overwrite)
+    line = f"{len(built.made)} rendered, {len(built.had)} already there, {len(built.failed)} failed"
+    if built.redone:
+        line += f", {len(built.redone)} of them replacing an image at another dpi"
+    print(line)
+    for page_id, why in built.failed:
+        print(f"{page_id}: {why}", file=sys.stderr)
+    return 1 if built.failed else 0
+
+
 def _serve_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"{PROG} serve",
@@ -372,6 +413,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return golden_cmd(rest)
     if command == "serve":
         return serve_cmd(rest)
+    if command == "pages":
+        return pages_cmd(rest)
     print(f"{PROG}: no command {command!r}\n\n{_usage()}", file=sys.stderr)
     return 2
 
@@ -385,6 +428,7 @@ def _usage() -> str:
         "  eval --set S --readings D   judge readings against a golden set\n"
         "  golden draw|check|show      the four golden sets and their drift\n"
         "  serve <model>          start a shortlisted reader under vLLM\n"
+        "  pages --set S          rasterise a golden set into the corpus images tree\n"
         "\n"
         f"{PROG} ocr-batch is a drop-in for the chatgpt-tool subcommand of the same\n"
         "name, so that the Bourbaki fleet can drive this machine with no change to\n"
