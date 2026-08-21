@@ -59,6 +59,22 @@ That builds the same command the corpus builds, `pdftoppm -png -r 300 -gray -f N
 
 A page already on disk at the dpi asked for is left alone. A page on disk at any other dpi is rendered again and reported, which is not a hypothetical. Two `lie-vii-ix` pages in `golden-dev` were sitting at 600 dpi from an old fleet retry, and a run that read them would have scored some models on one page and the rest on another. Images are never committed, on either side.
 
+## Training on the pages that have an answer
+
+Six of the volumes were extracted from the PDF by geometry with no model in the path, so for every one of their pages there is an image and a text that was never guessed. That is 2569 usable pages once the held out sets are taken out, and it is what a style adapter is trained on.
+
+```
+local-ocr pool --jsonl pool.jsonl --markdown pool.md
+local-ocr finetune --pool pool.jsonl --prompt-file prompt.txt \
+  --base reader-a --revision <sha> --out runs/style-1
+```
+
+`pool` excludes `golden-test` and `golden-hard` by id and never opens a page of either. It reads the manifests rather than the sets, because a builder that had to catch the guard's exception to do its job would be a builder that opens the door it is meant to be locking. The check runs on the way out of every build and not only in the test suite, since a pool with held out pages in it trains fine, converges fine, and then reports a number that measures how well the model memorised those pages.
+
+`golden-hard` has to be named rather than left to the tier B filter. It is a predicate over the pages a person had to read rather than a draw, so it grows into the drawn sets: 72 of its 124 pages are in tier B volumes, 6 of them are `golden-dev` pages and 4 are `golden-test` pages.
+
+`finetune` prepares the run and trains nothing, because the training needs the card and everything that decides whether a run is valid does not. It refuses a recipe with `finetune_vision_layers` on, since vLLM does not serve adapters on vision layers and one that has to be merged into the base is a different deployment from the one the VRAM budget sizes. It refuses an unpinned base revision, and it writes a run card recording the recipe, the pool shape and the prompt by digest.
+
 ## The invisible requirements
 
 Four things are not visible in the command line and all four matter.
@@ -93,6 +109,8 @@ src/local_ocr/backends/      one adapter per way of reading a page
 src/local_ocr/models.toml    the shortlist: repository, revision, port, flags
 src/local_ocr/serving.py     an entry in that file turned into a vLLM command line
 src/local_ocr/pageimages.py  a golden set rasterised the way the fleet rasterises
+src/local_ocr/pool.py        the training pool, with the held out sets kept out by id
+src/local_ocr/finetune.py    the style LoRA recipe, and the run card it writes
 deploy/                      the systemd unit that runs one, and the venv it needs
 tests/test_go_contract.py    the command line the Go side builds, run for real
 ```
