@@ -63,16 +63,18 @@ reader-a's fourth prompt revision on golden-dev, 200 pages:
   rule              obeyed        failures     convention  capability
   headings            0 of 60       60             56          4
   statement heads    34 of 84       50             50          0
-  running head      135 of 168      33             24          9
+  running head      135 of 168      33              7         26
   paragraphs        170 of 184      14              conventions by construction
   footnotes           0 of 7         7              5          2
   rings              83 of 84        1              conventions by construction
   dangerous bend      0 of 1         1              conventions by construction
   illegible         200 of 200       0
 
-135 convention against 15 capability, over the rules where the two can be told
+118 convention against 32 capability, over the rules where the two can be told
 apart. That is the answer section 08 wanted, and it says a style LoRA is the
-right instrument and the capability LoRA is not needed yet.
+right instrument and the capability LoRA is not needed yet. Headings and
+statement heads carry 106 of the 118 on their own, so the answer does not turn
+on any of the smaller rows.
 
 Not one of the 200 readings contains a single Markdown heading, and 60 of those
 pages have one to write. That is the largest single convention failure in the
@@ -80,11 +82,14 @@ corpus and it is invisible in every character rate, because a hash is one
 character. It is also load bearing: the structure of the Book is read out of the
 headings, and the corpus is currently being built without it.
 
-The one thing the prompt still might reach is the running head's largest bucket.
-19 of its 33 failures are pages where the head is somewhere in the reading but
-not on the first line, and the head pass already exists for exactly that. The 9
-that dropped the page label off the end of an otherwise correct head are the
-margin, and those are not going to be talked into existence.
+The running head's largest bucket is not something the prompt can reach, though
+the first version of this module said it was. 17 of its 33 failures are pages
+where the head's own words are nowhere in the reading at all, and the head pass
+runs on every page by default, so those are pages a second dedicated look at the
+top strip also came back empty on. 9 more dropped the page label off the end of
+an otherwise correct head, which is the six point figure in the outer margin and
+is not going to be talked into existence. Only 2 are the head present but out of
+place, which is the one shape the head pass is built to repair.
 
 The formula number is the one line here that is not a house rule, and it is
 counted separately for a reason. 2730 of golden-dev's 10730 spans are on one
