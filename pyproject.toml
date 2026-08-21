@@ -68,6 +68,15 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 # Russian it is tested against is full of them where they do.
 "src/local_ocr/russian.py" = ["RUF001", "RUF002", "RUF003"]
 "tests/test_russian.py" = ["RUF001", "RUF002", "RUF003"]
+# The same, for the two places that have to write a Cyrillic range to find one:
+# the word pattern that matches a page against a PDF page, and the Russian the
+# tests for it are made of.
+"src/local_ocr/kvant.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/test_kvant.py" = ["RUF001", "RUF002", "RUF003"]
+# And for the bake off's own tests, where the pages being judged are Russian and
+# one of them deliberately carries a Cyrillic es where a Latin c belongs, which
+# is the thing the homoglyph gate is there to find.
+"tests/test_bakeoff.py" = ["RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

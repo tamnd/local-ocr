@@ -182,6 +182,30 @@ def vocabulary(root: Path, *, seen: int = SEEN) -> set[str]:
     return {word for word, n in counts.items() if n >= seen}
 
 
+def lexicon(path: Path) -> set[str]:
+    """The vocabulary as the Kvant corpus already has it written down.
+
+    `manifests/lexicon.txt` there is 1.5 M word forms, built by the Go side from
+    the corpus's own Russian pages plus a published form list, with a header of
+    comment lines recording where each part came from. Reading it takes about a
+    second; rebuilding the same thing with `vocabulary` over 22 384 files takes
+    minutes and produces a smaller set, because the published list carries forms
+    this magazine happens not to use often enough to clear the threshold.
+
+    So this is the one to prefer, and `vocabulary` stays for the case where the
+    corpus is not to hand or the question is specifically what this corpus says.
+    Folded on the way in, because a lookup is always folded and folding 1.5 M
+    entries once beats folding the page's entries against an unfolded set.
+    """
+    words: set[str] = set()
+    with path.open(encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            word = line.strip()
+            if word and not word.startswith("#"):
+                words.add(fold(word))
+    return words
+
+
 def prose(body: str) -> str:
     """The body with its mathematics removed.
 

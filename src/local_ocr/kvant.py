@@ -80,7 +80,8 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -173,13 +174,31 @@ class Page:
 
     @property
     def pdf_page(self) -> int:
-        """The page number to hand a renderer, which counts from one.
+        """Gone. Which PDF page a sheet is on cannot be computed from its index.
 
-        `page_index` is the ordinal in the manifest and starts at zero, so the
-        cover is sheet 0 and PDF page 1. Off by one here would render the whole
-        set one sheet early and every number off it would be noise.
+        This used to return `page_index + 1`, on the reading that `page_index`
+        is a zero based sheet ordinal and the PDF holds every sheet. Both halves
+        are wrong and the error is not a constant, so it could not be found by
+        checking one page.
+
+        `page_index` is one based, and the scan manifests describe the publisher
+        JPGs rather than the PDF: they carry 68 sheets for a 64 page 2007 file,
+        because the covers and inserts exist as JPGs and are not in that PDF,
+        while the 2008 files of the same magazine do include them. Measured
+        across 130 cached issues the true offset is -2 for 2007, 0 for 2008, and
+        for ten issues it is neither, one of them being a double number with 83
+        sheets against 84 PDF pages.
+
+        So the offset is read off the PDF rather than assumed, by `align` below,
+        and this raises rather than returning a number that is right two thirds
+        of the time. It was wrong on 40 of 40 pages of the first Russian batch:
+        every one of them read a real Kvant page, and not the page the file
+        beside it was named for.
         """
-        return self.page_index + 1
+        raise AttributeError(
+            f"{self.id}: which PDF page this sheet is on has to come from align(), "
+            "because page_index is not the PDF's own ordinal"
+        )
 
 
 def read_page(path: Path) -> Page:
@@ -262,6 +281,92 @@ def scan(issue: str, store: Path) -> Path | None:
     return blob if blob.is_file() else None
 
 
+WORDS = re.compile(r"[А-Яа-яЁё]{4,}")
+"""What a page is recognised by when it is matched against a PDF page.
+
+Russian words of four letters and up. Short words are the function words and
+every page has all of them, digits are folios and figure numbers and collide
+across a whole issue, and Latin runs are variable names. Four letters and up is
+what makes two word sets from the same page overlap and two from different pages
+not.
+"""
+
+SURE = 0.55
+"""How much of a page's vocabulary a PDF page has to share to be called it.
+
+The measurement this comes from: matching every native page of 130 cached
+issues against every page of its PDF, a correct pair scores between 0.93 and
+1.00 and the best wrong pair on the same issue scores under 0.2. There is no
+density anywhere near the middle, which is what a set of pages from one magazine
+should look like, so the threshold is placed in the empty space rather than
+tuned.
+"""
+
+
+def pdftext(pdf: Path) -> list[str]:
+    """Every page of a PDF as text, in order, one run of pdftotext.
+
+    One run and not one per page. The whole file is a tenth of a second and 64
+    runs are several seconds, and this is called once per issue while drawing
+    two hundred pages spread over 127 of them.
+    """
+    out = subprocess.run(
+        ["pdftotext", "-layout", str(pdf), "-"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return out.split("\f")
+
+
+def align(
+    chosen: Sequence[Page],
+    pdf: Path,
+    text: Callable[[Path], list[str]] = pdftext,
+) -> dict[str, int]:
+    """Which PDF page each of these sheets is actually on.
+
+    By reading both and matching, rather than by adding an offset to an index.
+    Tier B is born digital by construction, so the corpus already holds the text
+    of every page in it and the PDF holds the text of every page in the file,
+    and the question of which is which is then a vocabulary overlap and not a
+    guess. That is the whole reason this is possible here and would not be on a
+    scanned tier.
+
+    Two checks, because a wrong render is silent and produces a page of real
+    Russian that scores badly for reasons nobody can see. A page has to clear
+    `SURE` against its best candidate, and its offset has to agree with the rest
+    of the issue's. A page that fails either is left out of the returned map and
+    its caller reports it as unrendered, which is a page missing from a run and
+    is visible, rather than a page read in the wrong place, which is not.
+    """
+    theirs = [frozenset(w.lower() for w in WORDS.findall(page)) for page in text(pdf)]
+
+    best: dict[str, tuple[float, int]] = {}
+    for page in chosen:
+        mine = frozenset(w.lower() for w in WORDS.findall(page.body))
+        if not mine:
+            continue
+        top = (0.0, 0)
+        for n, other in enumerate(theirs, start=1):
+            if not other:
+                continue
+            score = len(mine & other) / len(mine | other)
+            if score > top[0]:
+                top = (score, n)
+        if top[0] >= SURE:
+            best[page.id] = top
+
+    by_id = {page.id: page for page in chosen}
+    offsets = Counter(n - by_id[page_id].page_index for page_id, (_, n) in best.items())
+    if not offsets:
+        return {}
+    agreed, _ = offsets.most_common(1)[0]
+    return {
+        page_id: n for page_id, (_, n) in best.items() if n - by_id[page_id].page_index == agreed
+    }
+
+
 def render(
     chosen: Sequence[Page],
     store: Path,
@@ -269,6 +374,7 @@ def render(
     dpi: int = pageimages.DEFAULT_DPI,
     overwrite: bool = False,
     renderer: pageimages.Renderer | None = None,
+    text: Callable[[Path], list[str]] = pdftext,
 ) -> pageimages.Built:
     """Rasterise the pages of a set into a directory outside both trees.
 
@@ -291,6 +397,22 @@ def render(
     render_with = renderer or pageimages.Renderer(corpus=out, dpi=dpi)
     built = pageimages.Built()
     pdfs: dict[str, Path | None] = {}
+    where: dict[str, int] = {}
+    # By issue, because align reads the whole PDF once and answers for every
+    # page of it, and because the offset check it makes is a check across an
+    # issue's pages and needs them together.
+    for issue in sorted({page.issue for page in chosen}):
+        pdfs[issue] = scan(issue, store)
+        source = pdfs[issue]
+        if source is None:
+            continue
+        try:
+            where.update(align([p for p in chosen if p.issue == issue], source, text))
+        except (subprocess.CalledProcessError, OSError):
+            # Reported per page below, so that one unreadable PDF costs its own
+            # issue and not the run.
+            continue
+
     for page in chosen:
         there = out / page.issue / f"{page.page_index:04d}.png"
         if there.exists() and not overwrite:
@@ -298,14 +420,18 @@ def render(
                 built.had.append(page.id)
                 continue
             built.redone.append(page.id)
-        if page.issue not in pdfs:
-            pdfs[page.issue] = scan(page.issue, store)
-        source = pdfs[page.issue]
+        source = pdfs.get(page.issue)
         if source is None:
             built.failed.append((page.id, f"no cached scan for {page.issue}"))
             continue
+        at = where.get(page.id)
+        if at is None:
+            built.failed.append(
+                (page.id, "no PDF page matches this sheet's text well enough to render it")
+            )
+            continue
         try:
-            render_with.to(source, page.pdf_page, there)
+            render_with.to(source, at, there)
         except (pageimages.NoSource, subprocess.CalledProcessError) as err:
             built.failed.append((page.id, str(err)))
             continue

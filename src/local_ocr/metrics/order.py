@@ -144,15 +144,18 @@ def _overlap(a: tuple[frozenset[str], str], b: tuple[frozenset[str], str]) -> fl
     return len(a[0] & b[0]) / len(a[0] | b[0])
 
 
-def _pairs(
+def _match(
     read: list[tuple[frozenset[str], str]], want: list[tuple[frozenset[str], str]]
-) -> list[int]:
-    """For the reading's blocks in order, which reference block each one is.
+) -> dict[int, int]:
+    """Which reference block each of the reading's blocks is, by index.
 
     Greedy and best first rather than left to right. Left to right would let an
     early block take a partial match that a later block matches better, and the
     later block would then match nothing and be counted as dropped, which turns
     one bad guess into two wrong numbers.
+
+    One function, used by both the tau and the character rate, so that the two
+    numbers cannot disagree about which block is which.
     """
     scored = [(_overlap(a, b), i, j) for i, a in enumerate(read) for j, b in enumerate(want)]
     scored.sort(key=lambda s: (-s[0], s[1], s[2]))
@@ -167,6 +170,14 @@ def _pairs(
         taken_read.add(i)
         taken_want.add(j)
         found[i] = j
+    return found
+
+
+def _pairs(
+    read: list[tuple[frozenset[str], str]], want: list[tuple[frozenset[str], str]]
+) -> list[int]:
+    """For the reading's blocks in order, which reference block each one is."""
+    found = _match(read, want)
     return [found[i] for i in sorted(found)]
 
 
@@ -185,6 +196,31 @@ def _tau(sequence: list[int]) -> tuple[float, int]:
     inversions = sum(1 for i in range(n) for j in range(i + 1, n) if sequence[i] > sequence[j])
     total = n * (n - 1) // 2
     return (total - 2 * inversions) / total, inversions
+
+
+def paired(read: str, want: str) -> tuple[list[tuple[str, str]], list[str], list[str]]:
+    """The blocks of two readings matched up, and what each side had left over.
+
+    Three things back: the matched pairs in the reference's order, the reference
+    blocks nothing matched, and the reading blocks nothing matched.
+
+    This is the part underneath `order`. `order` throws the text away and keeps
+    the positions, which is all a tau needs; a character error rate needs the
+    text, and it needs it matched the same way, because matching it a second
+    time by a different rule would let the two numbers disagree about which
+    block is which. Splitting the matching out is what lets a reader be scored
+    on what it read without the reference's own bad column order being charged
+    to it as character errors.
+    """
+    a, b = _keys(read), _keys(want)
+    found = _match(a, b)
+    back = {j: i for i, j in found.items()}
+    pairs = [(a[back[j]][1], b[j][1]) for j in sorted(back)]
+    return (
+        pairs,
+        [b[j][1] for j in range(len(b)) if j not in back],
+        [a[i][1] for i in range(len(a)) if i not in found],
+    )
 
 
 def order(read: str, want: str) -> Order:
