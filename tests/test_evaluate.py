@@ -72,6 +72,27 @@ class TestExpect:
         assert expect.page == 0, "rule 6 has nothing to check against, and stands down"
 
 
+class TestHeadLine:
+    """The order of the two halves, which is the page number's to decide."""
+
+    def test_an_odd_page_prints_its_title_first(self):
+        assert evaluate.head_line(page(label="A VIII.13")) == "THE RADICAL A VIII.13"
+
+    def test_an_even_page_prints_its_label_first(self):
+        assert evaluate.head_line(page(label="A VIII.14")) == "A VIII.14 THE RADICAL"
+
+    def test_a_label_with_no_number_keeps_the_title_first(self):
+        """Nothing to decide the order with, so the old order stands."""
+        assert evaluate.head_line(page(label="A VIII")) == "THE RADICAL A VIII"
+
+    def test_a_page_with_only_one_half_is_that_half(self):
+        assert evaluate.head_line(page(label="")) == "THE RADICAL"
+        assert evaluate.head_line(page(head="")) == "A VIII.13"
+
+    def test_a_page_with_neither_half_falls_back_to_the_folio(self):
+        assert evaluate.head_line(page(label="", head="")) == page().folio
+
+
 class TestHead:
     def test_the_head_is_taken_off_the_reading(self):
         assert evaluate.without_head(page(), READING).strip() == BODY.strip()

@@ -24,7 +24,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from local_ocr import __version__, pageimages, serving, wsl
+from local_ocr import __version__, pageimages, pool, serving, wsl
 from local_ocr import corpus as corpuslib
 from local_ocr.batch import DEFAULT_TIMEOUT, Options, Reader, run
 from local_ocr.corpus import NoCorpus
@@ -747,6 +747,59 @@ def pages_cmd(argv: Sequence[str]) -> int:
     return 1 if built.failed else 0
 
 
+def _pool_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=f"{PROG} pool",
+        description="Build the tier B training pool, with the held out sets excluded by id.",
+    )
+    parser.add_argument("--corpus", type=Path, default=None, help="a checkout of tamnd/bourbaki")
+    parser.add_argument("--jsonl", type=Path, default=None, help="write the examples here")
+    parser.add_argument("--markdown", type=Path, default=None, help="write the summary here")
+    parser.add_argument(
+        "--validation",
+        type=float,
+        default=pool.VALIDATION,
+        help="the fraction held back for the loss curve, chosen by page id",
+    )
+    parser.add_argument(
+        "--all-pages",
+        action="store_true",
+        help="keep pages with no rendered image, which no trainer can read",
+    )
+    return parser
+
+
+def pool_cmd(argv: Sequence[str]) -> int:
+    """Build the training pool and say what it left out.
+
+    Reads only, and it never opens a page of `golden-test` or `golden-hard`.
+    The exclusion is by id off the manifests, and `pool.check` asserts it on the
+    way out of the build rather than trusting the loop that did it.
+    """
+    args = _pool_parser().parse_args(list(argv))
+    try:
+        built = pool.build(
+            args.corpus,
+            validation=args.validation,
+            require_image=not args.all_pages,
+        )
+    except (NoCorpus, FileNotFoundError, pool.Contaminated) as err:
+        print(f"{PROG}: {err}", file=sys.stderr)
+        return 2
+
+    if args.jsonl is not None:
+        args.jsonl.parent.mkdir(parents=True, exist_ok=True)
+        args.jsonl.write_text(pool.to_jsonl(built), encoding="utf-8")
+        print(f"{len(built.examples)} examples, written to {args.jsonl}", file=sys.stderr)
+    text = pool.report(built)
+    if args.markdown is not None:
+        args.markdown.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown.write_text(text, encoding="utf-8")
+        return 0
+    print(text, end="")
+    return 0
+
+
 def _mine_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"{PROG} mine",
@@ -1128,6 +1181,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return pages_cmd(rest)
     if command == "mine":
         return mine_cmd(rest)
+    if command == "pool":
+        return pool_cmd(rest)
     if command == "bench":
         return bench_cmd(rest)
     print(f"{PROG}: no command {command!r}\n\n{_usage()}", file=sys.stderr)
@@ -1147,6 +1202,7 @@ def _usage() -> str:
         "  serve <model>          start a shortlisted reader under vLLM\n"
         "  pages --set S          rasterise a golden set into the corpus images tree\n"
         "  mine <dir>             training pairs out of the readers' disagreements\n"
+        "  pool --jsonl F         the tier B training pool of section 08\n"
         "  bench --plan           the six serving benchmarks of section 01\n"
         "\n"
         "A second reader is switched on with LOCAL_OCR_REFEREE, naming an entry in\n"
@@ -1160,6 +1216,12 @@ def _usage() -> str:
         "\n"
         "eval needs a checkout of tamnd/bourbaki, found through BOURBAKI_CORPUS or\n"
         "given with --corpus. Nothing in this repository copies pages out of it.\n"
+        "\n"
+        "pool excludes golden-test and golden-hard by id and never opens a page of\n"
+        "either. It reads the manifests rather than the sets, because a builder that\n"
+        "had to catch Burned to do its job would be a builder that opens the door it\n"
+        "is meant to be locking. golden-dev is in the pool, section 08 allows that,\n"
+        "and the report says how many of its pages are in there.\n"
         "\n"
         "kvant needs a checkout of tamnd/kvant through KVANT_CORPUS and its scan\n"
         "cache through KVANT_CACHE. The reference there is the publisher's own text\n"
