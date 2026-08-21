@@ -84,5 +84,24 @@ def test_the_list_names_every_reader(capsys: pytest.CaptureFixture[str]) -> None
     assert ran.command is None
 
 
+def test_a_sweep_flag_is_appended_after_the_entrys_own(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # vLLM takes the last occurrence of a repeated option, so appending is what
+    # makes --max-num-seqs 32 win over the 16 in the entry.
+    ran = Exec()
+    cli.serve_cmd(["reader-a", "--extra", "--max-num-seqs 32"], exec_=ran)
+    assert ran.command is not None
+    assert ran.command[-2:] == ["--max-num-seqs", "32"]
+    assert ran.command.count("--max-num-seqs") == 2
+
+
+def test_a_sweep_says_out_loud_that_it_is_not_the_shortlist(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli.serve_cmd(["reader-a", "--extra", "--max-num-seqs 32"], exec_=Exec())
+    assert "--max-num-seqs 32" in capsys.readouterr().err
+
+
 def test_the_usage_mentions_serve() -> None:
     assert "serve" in cli._usage()

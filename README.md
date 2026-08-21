@@ -33,6 +33,8 @@ local-ocr serve reader-a        start one, replacing this process with vLLM
 local-ocr serve reader-a --print    the command line, without starting anything
 ```
 
+`--extra "--max-num-seqs 32"` appends flags after the entry's own, and vLLM takes the last occurrence of a repeated option, so a sweep is one command rather than six near identical entries. It prints what it appended, because a number measured under a flag the shortlist does not mention would otherwise be filed against the wrong configuration. Whatever wins a sweep is edited into the entry.
+
 The shortlist is `src/local_ocr/models.toml`: one table per candidate, holding the repository, a pinned revision, the port and the flags it is served under. Adding a candidate is an entry rather than a patch, and every revision is pinned because a reading is only comparable to another reading of the same weights.
 
 `deploy/local-ocr-reader@.service` runs that under systemd, templated on the entry name, so two readers side by side is two instances rather than two unit files. `deploy/venv.sh` builds the environment it runs in.

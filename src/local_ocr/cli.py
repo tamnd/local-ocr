@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import shlex
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -27,6 +28,7 @@ from local_ocr import corpus as corpuslib
 from local_ocr.batch import DEFAULT_TIMEOUT, Options, Reader, run
 from local_ocr.corpus import NoCorpus
 from local_ocr.golden import Purpose
+from local_ocr.headpass import HeadPass
 
 PROG = "local-ocr"
 
@@ -132,7 +134,16 @@ def _prompt(args: argparse.Namespace) -> str:
 def _reader(args: argparse.Namespace) -> Reader:
     from local_ocr.backends import build
 
-    return build(args.backend, model=args.model, base_url=args.base_url)
+    reader = build(args.backend, model=args.model, base_url=args.base_url)
+    if os.environ.get("LOCAL_OCR_HEAD_PASS", "1") == "0":
+        return reader
+    # On by default, and not a command line argument, because the fleet builds
+    # a fixed command and cannot pass one. A reading without its running head
+    # is rejected by rule 4, so producing one is part of what reading a page
+    # means here rather than an option somebody has to know about. The
+    # environment variable is for measuring the pass, which is the only reason
+    # to turn it off.
+    return HeadPass(reader)
 
 
 def ocr_batch(argv: Sequence[str], reader: Reader | None = None) -> int:
@@ -168,6 +179,12 @@ def ocr_batch(argv: Sequence[str], reader: Reader | None = None) -> int:
         print(line, flush=True)
 
     summary = asyncio.run(run(opts, reader, prompt, log=log))
+    if isinstance(reader, HeadPass) and reader.asked:
+        # The one line that says whether the second look was worth its time. A
+        # run where asked is high and fixed is low is a run where the crop is
+        # landing in the wrong place or the model is answering with prose, and
+        # neither shows up anywhere else: the reading looks the same either way.
+        log(f"head pass: asked on {reader.asked} pages, put a head on {reader.fixed}")
     return 0 if summary.ok else 1
 
 
@@ -344,6 +361,13 @@ def _serve_parser() -> argparse.ArgumentParser:
         help="print the command line and do not start anything",
     )
     parser.add_argument("--vllm", default="vllm", help="the binary, for a venv that is not on PATH")
+    parser.add_argument(
+        "--extra",
+        action="append",
+        default=[],
+        metavar="FLAGS",
+        help="vLLM flags appended after the entry's own, for a benchmark sweep",
+    )
     return parser
 
 
@@ -387,9 +411,16 @@ def serve_cmd(argv: Sequence[str], exec_: Callable[[str, list[str]], None] | Non
             file=sys.stderr,
         )
 
-    command = entry.command(args.vllm)
+    extra = [word for flags in args.extra for word in shlex.split(flags)]
+    if extra:
+        # Loud on purpose. A sweep starts the server with something the
+        # shortlist does not say, and the log of the run has to carry that or
+        # the number it produces is attributed to the wrong configuration.
+        print(f"{PROG}: {entry.name} with {shlex.join(extra)} appended", file=sys.stderr)
+
+    command = entry.command(args.vllm, extra)
     if args.dry:
-        print(entry.shell(args.vllm))
+        print(entry.shell(args.vllm, extra))
         return 0
 
     (exec_ or os.execvp)(command[0], command)

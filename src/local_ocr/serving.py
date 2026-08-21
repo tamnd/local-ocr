@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import shlex
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -64,8 +65,17 @@ class Model:
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}/v1"
 
-    def command(self, binary: str = "vllm") -> list[str]:
-        """The whole command line, in the order a person would read it."""
+    def command(self, binary: str = "vllm", extra: Sequence[str] = ()) -> list[str]:
+        """The whole command line, in the order a person would read it.
+
+        `extra` goes last, after the entry's own flags, and vLLM's parser takes
+        the last occurrence of a repeated option. That is what makes a sweep
+        possible without six near identical entries in the shortlist: the
+        benchmark starts `reader-a` with `--max-num-seqs 32` appended and every
+        other flag is the one the report will name. It is for measuring. A
+        setting that wins a sweep is edited into the entry rather than left
+        living in whatever shell ran it.
+        """
         return [
             binary,
             "serve",
@@ -77,11 +87,12 @@ class Model:
             "--port",
             str(self.port),
             *self.args,
+            *extra,
         ]
 
-    def shell(self, binary: str = "vllm") -> str:
+    def shell(self, binary: str = "vllm", extra: Sequence[str] = ()) -> str:
         """The same thing, quoted, for a unit file or a person to paste."""
-        return shlex.join(self.command(binary))
+        return shlex.join(self.command(binary, extra))
 
 
 def load(path: Path | None = None) -> dict[str, Model]:
