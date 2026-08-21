@@ -449,7 +449,7 @@ def golden_cmd(argv: Sequence[str]) -> int:
 
 
 def kvant_cmd(argv: Sequence[str]) -> int:
-    """`kvant draw`, `kvant check` and `kvant show`, the Russian tier B set.
+    """`kvant draw`, `check`, `show` and `pages`, the Russian tier B set.
 
     A separate command from `golden` and not a flag on it, because it reads a
     different corpus out of a different environment variable and a different
@@ -459,10 +459,17 @@ def kvant_cmd(argv: Sequence[str]) -> int:
     from local_ocr import kvant
 
     parser = argparse.ArgumentParser(prog=f"{PROG} kvant")
-    parser.add_argument("action", choices=["draw", "check", "show"])
+    parser.add_argument("action", choices=["draw", "check", "show", "pages"])
     parser.add_argument("--corpus", type=Path, default=None)
     parser.add_argument("--cache", type=Path, default=None)
-    parser.add_argument("--name", default="", help="for show, which set to list")
+    parser.add_argument("--name", default="", help="for show and pages, which set")
+    parser.add_argument("--out", type=Path, default=None, help="for pages, where images go")
+    parser.add_argument("--dpi", type=int, default=pageimages.DEFAULT_DPI)
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="re-render pages already on disk, which is how a dpi change takes effect",
+    )
     args = parser.parse_args(list(argv))
 
     if args.action == "show":
@@ -486,6 +493,27 @@ def kvant_cmd(argv: Sequence[str]) -> int:
         for drift in kvant.check(corpus, store):
             print(drift.line())
         return 0
+
+    if args.action == "pages":
+        if args.out is None:
+            print(f"{PROG}: kvant pages needs --out, a directory in neither tree", file=sys.stderr)
+            return 2
+        # Rendering is not reading, so it does not burn the held out set. The
+        # purpose is still stated rather than defaulted, because the default
+        # would be chosen once by whoever wrote the next caller.
+        name = args.name or "kvant-dev"
+        chosen = kvant.load(name, purpose=Purpose.MILESTONE, corpus=corpus)
+        built = kvant.render(chosen, store, args.out, dpi=args.dpi, overwrite=args.overwrite)
+        line = (
+            f"{len(built.made)} rendered, {len(built.had)} already there, "
+            f"{len(built.failed)} failed"
+        )
+        if built.redone:
+            line += f", {len(built.redone)} of them replacing an image at another dpi"
+        print(line)
+        for page_id, why in built.failed:
+            print(f"{page_id}: {why}", file=sys.stderr)
+        return 1 if built.failed else 0
 
     drawn = kvant.draw(corpus, store)
     for path in kvant.write_manifests(drawn):
@@ -716,7 +744,7 @@ def _usage() -> str:
         "  ocr-batch <in> <out>   read a directory of page images into Markdown\n"
         "  eval --set S --readings D   judge readings against a golden set\n"
         "  golden draw|check|show      the four golden sets and their drift\n"
-        "  kvant draw|check|show       the Russian tier B set and its drift\n"
+        "  kvant draw|check|show|pages the Russian tier B set, its drift, its images\n"
         "  serve <model>          start a shortlisted reader under vLLM\n"
         "  pages --set S          rasterise a golden set into the corpus images tree\n"
         "  mine <dir>             training pairs out of the readers' disagreements\n"
@@ -736,6 +764,9 @@ def _usage() -> str:
         "kvant needs a checkout of tamnd/kvant through KVANT_CORPUS and its scan\n"
         "cache through KVANT_CACHE. The reference there is the publisher's own text\n"
         "layer, so a number off it is a distance to the file and not to the paper.\n"
+        "kvant pages wants --out as well, a directory in neither tree, because the\n"
+        "Kvant checkout has nowhere that images are ignored the way the Bourbaki\n"
+        "one has images/.\n"
     )
 
 

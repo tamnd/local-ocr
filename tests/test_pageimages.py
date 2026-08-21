@@ -9,34 +9,12 @@ nothing and reports success.
 
 from __future__ import annotations
 
-import struct
-import zlib
 from pathlib import Path
 
 import pytest
+from pdftoppm import Fake, png
 
 from local_ocr import pageimages
-
-
-def png(path: Path, dpi: int | None, width: int = 8, height: int = 8) -> None:
-    """The smallest PNG that says what it was rendered at, or refuses to."""
-
-    def chunk(kind: bytes, body: bytes) -> bytes:
-        return (
-            struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
-        )
-
-    out = [
-        b"\x89PNG\r\n\x1a\n",
-        chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)),
-    ]
-    if dpi is not None:
-        metre = round(dpi / 0.0254)
-        out.append(chunk(b"pHYs", struct.pack(">IIB", metre, metre, 1)))
-    out.append(chunk(b"IDAT", zlib.compress(b"\x00" * (width + 1) * height)))
-    out.append(chunk(b"IEND", b""))
-    path.write_bytes(b"".join(out))
-
 
 BOOKS = """
 books:
@@ -60,21 +38,6 @@ def corpus(tmp_path: Path) -> Path:
     (tmp_path / "pdf" / "en" / "algebra-viii.pdf").write_bytes(b"%PDF-1.4\n")
     (tmp_path / "pdf" / "fr" / "ts-i-ii.pdf").write_bytes(b"%PDF-1.4\n")
     return tmp_path
-
-
-class Fake:
-    """Stands in for pdftoppm, writing what pdftoppm would write."""
-
-    def __init__(self, width: int = 3) -> None:
-        self.width = width
-        self.commands: list[list[str]] = []
-
-    def run(self, command: list[str]) -> None:
-        self.commands.append(command)
-        page = int(command[command.index("-f") + 1])
-        dpi = int(command[command.index("-r") + 1])
-        prefix = Path(command[-1])
-        png(prefix.with_name(f"{prefix.name}-{page:0{self.width}d}.png"), dpi)
 
 
 class TestSources:
@@ -172,6 +135,39 @@ class TestRender:
         render = pageimages.Renderer(corpus=corpus, run=Nothing())
         with pytest.raises(pageimages.NoSource):
             render.render("alg-viii", 9999, corpus / "pdf/en/algebra-viii.pdf")
+
+
+class TestTo:
+    """The seam underneath `render`, for sets not filed by book and printed page."""
+
+    def test_the_image_lands_at_the_path_asked_for(self, corpus: Path, tmp_path: Path) -> None:
+        out = tmp_path / "elsewhere" / "0016.png"
+        render = pageimages.Renderer(corpus=corpus, run=Fake())
+        assert render.to(corpus / "pdf/en/algebra-viii.pdf", 17, out) == out
+        assert pageimages.dpi_of(out) == pageimages.DEFAULT_DPI
+
+    def test_the_page_of_the_pdf_is_not_taken_from_the_file_name(
+        self, corpus: Path, tmp_path: Path
+    ) -> None:
+        # Kvant numbers its sheets from zero, so the image is 0016.png and the
+        # page pdftoppm is asked for is 17. Deriving one from the other here
+        # would render the whole set one sheet early.
+        fake = Fake()
+        render = pageimages.Renderer(corpus=corpus, run=fake)
+        render.to(corpus / "pdf/en/algebra-viii.pdf", 17, tmp_path / "0016.png")
+        command = fake.commands[0]
+        assert command[command.index("-f") + 1] == "17"
+
+    def test_two_pages_into_one_directory_do_not_collide(
+        self, corpus: Path, tmp_path: Path
+    ) -> None:
+        # The working name is per page rather than per directory, so a run that
+        # is interrupted between two pages leaves no name the next one trips on.
+        out = tmp_path / "elsewhere"
+        render = pageimages.Renderer(corpus=corpus, run=Fake())
+        for sheet, page in ((16, 17), (17, 18)):
+            render.to(corpus / "pdf/en/algebra-viii.pdf", page, out / f"{sheet:04d}.png")
+        assert sorted(p.name for p in out.iterdir()) == ["0016.png", "0017.png"]
 
 
 class TestDpiOf:

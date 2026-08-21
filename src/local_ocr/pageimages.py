@@ -130,24 +130,33 @@ class Renderer:
             return
         subprocess.run(list(command), check=True, capture_output=True)
 
-    def render(self, book: str, page: int, source: Path) -> Path:
-        """Rasterise one page and put it where the fleet would look for it.
+    def to(self, source: Path, page: int, out: Path) -> Path:
+        """Rasterise one page of one PDF to exactly the path given.
 
         pdftoppm names its output `<prefix>-N.png` with N padded to the width of
-        the volume's page count, so the width depends on the book and cannot be
-        predicted from here. The file is found rather than named, and renamed.
+        the volume's page count, so the width depends on the source and cannot
+        be predicted from here. The file is found rather than named, and renamed.
+
+        This is the part underneath `render`. `render` names the destination
+        from the corpus layout, which is right for a Bourbaki set and wrong for
+        a set whose pages are not filed by book id and printed page. Kvant is
+        one of those: its sheets are numbered from zero and its scans live in a
+        content addressed store, so it needs to say where the image goes.
         """
-        out = image_path(self.corpus, book, page)
         out.parent.mkdir(parents=True, exist_ok=True)
-        prefix = out.parent / f".render-{page:04d}"
+        prefix = out.parent / f".render-{out.stem}"
         self._run(self.command(source, page, prefix))
         written = sorted(out.parent.glob(f"{prefix.name}-*.png"))
         if len(written) != 1:
             for stray in written:
                 stray.unlink()
-            raise NoSource(f"pdftoppm wrote {len(written)} images for {book}/{page:04d}")
+            raise NoSource(f"pdftoppm wrote {len(written)} images for {out.name}")
         written[0].replace(out)
         return out
+
+    def render(self, book: str, page: int, source: Path) -> Path:
+        """Rasterise one page and put it where the fleet would look for it."""
+        return self.to(source, page, image_path(self.corpus, book, page))
 
 
 @dataclass

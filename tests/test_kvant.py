@@ -14,8 +14,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pdftoppm import Fake, png
 
-from local_ocr import kvant
+from local_ocr import kvant, pageimages
 from local_ocr.golden import Burned, Purpose
 
 RUSSIAN = "Рассмотрим последовательность точек на плоскости и докажем, что она сходится. " * 6
@@ -264,6 +265,183 @@ def test_a_page_file_with_a_word_where_the_index_goes_says_which_file(tmp_path):
     with pytest.raises(ValueError) as err:
         kvant.read_page(path)
     assert "0016.md" in str(err.value)
+
+
+SHEETS = "sheets:\n  - ord: 0\n    file: '0000'\n    sha256: {sheet}\n"
+
+
+@pytest.fixture
+def store(tmp_path: Path) -> Path:
+    """A scan cache holding one issue, the way `kvant-cache` holds a hundred."""
+    cache = tmp_path / "cache"
+    (cache / "pages").mkdir(parents=True)
+    digest = "22" * 32
+    (cache / "pages" / "kvant_2018_10.yaml").write_text(
+        SHEETS.format(sheet="11" * 32) + f"pdf:\n  sha256: {digest}\n  bytes: 4407970\n",
+        encoding="utf-8",
+    )
+    blob = cache / "blobs" / digest[:2]
+    blob.mkdir(parents=True)
+    (blob / digest[2:]).write_bytes(b"%PDF-1.4\n")
+    return cache
+
+
+class TestRender:
+    def test_the_image_is_named_by_the_sheet_and_the_page_asked_for_is_the_next_one(
+        self, store: Path, tmp_path: Path
+    ) -> None:
+        """The one off by one this module can make, in the one place it makes it.
+
+        The corpus files sheet 16 as `0016.md` and the same sheet is page 17 of
+        the PDF, so the image has to be named from one number and rendered from
+        the other. Getting it wrong renders the whole set one sheet early and
+        every page still reads, so nothing downstream would complain.
+        """
+        fake = Fake()
+        out = tmp_path / "img"
+        built = kvant.render(
+            [page(page_index=16)],
+            store,
+            out,
+            renderer=pageimages.Renderer(corpus=out, run=fake),
+        )
+        assert built.made == ["kvant_2018_10/0016"]
+        assert (out / "kvant_2018_10" / "0016.png").exists()
+        command = fake.commands[0]
+        assert command[command.index("-f") + 1] == "17"
+
+    def test_the_source_is_the_blob_the_issue_manifest_points_at(
+        self, store: Path, tmp_path: Path
+    ) -> None:
+        fake = Fake()
+        out = tmp_path / "img"
+        kvant.render([page()], store, out, renderer=pageimages.Renderer(corpus=out, run=fake))
+        assert fake.commands[0][-2] == str(kvant.scan("kvant_2018_10", store))
+
+    def test_the_images_go_where_the_caller_said_and_into_neither_tree(
+        self, store: Path, tmp_path: Path
+    ) -> None:
+        # The Bourbaki side writes into `images/` inside the corpus checkout,
+        # which is gitignored there. The Kvant checkout has no such directory,
+        # and a set of 200 scans landing in it is a `git add -A` away from being
+        # committed.
+        out = tmp_path / "somewhere else"
+        kvant.render([page()], store, out, renderer=pageimages.Renderer(corpus=out, run=Fake()))
+        assert (out / "kvant_2018_10" / "0016.png").exists()
+        assert list(store.rglob("*.png")) == []
+
+    def test_an_issue_with_no_cached_scan_is_reported_and_not_raised(
+        self, store: Path, tmp_path: Path
+    ) -> None:
+        # 130 issues, and the cache is 9.8 GB. One missing is a page short, not
+        # a run that dies two thirds of the way through a rasterisation.
+        built = kvant.render([page(issue="kvant_1970_1")], store, tmp_path / "img")
+        assert built.made == []
+        assert built.failed == [("kvant_1970_1/0016", "no cached scan for kvant_1970_1")]
+
+    def test_a_page_that_produced_no_image_is_a_failure_and_not_a_missing_file(
+        self, store: Path, tmp_path: Path
+    ) -> None:
+        class Nothing:
+            def run(self, command: list[str]) -> None:
+                return None
+
+        out = tmp_path / "img"
+        built = kvant.render(
+            [page()], store, out, renderer=pageimages.Renderer(corpus=out, run=Nothing())
+        )
+        assert built.made == []
+        assert len(built.failed) == 1
+        assert "0 images" in built.failed[0][1]
+
+    def test_a_page_already_there_at_this_dpi_is_left_alone(
+        self, store: Path, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "img"
+        (out / "kvant_2018_10").mkdir(parents=True)
+        png(out / "kvant_2018_10" / "0016.png", 300)
+        fake = Fake()
+        built = kvant.render(
+            [page()], store, out, dpi=300, renderer=pageimages.Renderer(corpus=out, run=fake)
+        )
+        assert built.had == ["kvant_2018_10/0016"]
+        assert fake.commands == []
+
+    def test_a_page_there_at_another_dpi_is_rendered_again_and_says_so(
+        self, store: Path, tmp_path: Path
+    ) -> None:
+        # A 300 dpi page in a 600 dpi set is a reader scored on a different image
+        # from the rest, which is the one thing a bake off cannot survive.
+        out = tmp_path / "img"
+        (out / "kvant_2018_10").mkdir(parents=True)
+        png(out / "kvant_2018_10" / "0016.png", 300)
+        built = kvant.render(
+            [page()],
+            store,
+            out,
+            dpi=600,
+            renderer=pageimages.Renderer(corpus=out, dpi=600, run=Fake()),
+        )
+        assert built.made == ["kvant_2018_10/0016"]
+        assert built.redone == ["kvant_2018_10/0016"]
+        assert pageimages.dpi_of(out / "kvant_2018_10" / "0016.png") == 600
+
+    def test_overwrite_renders_a_page_that_is_already_right(
+        self, store: Path, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "img"
+        (out / "kvant_2018_10").mkdir(parents=True)
+        png(out / "kvant_2018_10" / "0016.png", 300)
+        fake = Fake()
+        built = kvant.render(
+            [page()],
+            store,
+            out,
+            dpi=300,
+            overwrite=True,
+            renderer=pageimages.Renderer(corpus=out, run=fake),
+        )
+        assert built.made == ["kvant_2018_10/0016"]
+        assert len(fake.commands) == 1
+
+    def test_an_issue_is_looked_up_once_however_many_of_its_pages_are_drawn(
+        self, store: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Every lookup parses a manifest off disk, and the draw is 200 pages over
+        # 127 issues, so this is small. It is here because the dict that makes it
+        # true also caches the misses, which is the part worth not losing.
+        looked: list[str] = []
+        real = kvant.scan
+        monkeypatch.setattr(
+            kvant, "scan", lambda issue, s: (looked.append(issue), real(issue, s))[1]
+        )
+        out = tmp_path / "img"
+        chosen = [page(page_index=n) for n in (16, 17, 18)]
+        built = kvant.render(
+            chosen, store, out, renderer=pageimages.Renderer(corpus=out, run=Fake())
+        )
+        assert len(built.made) == 3
+        assert looked == ["kvant_2018_10"]
+
+    def test_the_command_is_the_one_the_fleet_builds(self, store: Path, tmp_path: Path) -> None:
+        # Same flags as `bourbaki render`, so a number measured off these images
+        # is a number about the reader and not about the rasteriser.
+        fake = Fake()
+        out = tmp_path / "img"
+        kvant.render(
+            [page()],
+            store,
+            out,
+            dpi=400,
+            renderer=pageimages.Renderer(corpus=out, dpi=400, run=fake),
+        )
+        command = fake.commands[0]
+        assert command[:5] == ["pdftoppm", "-png", "-r", "400", "-gray"]
+
+    def test_nothing_of_the_working_name_is_left_behind(self, store: Path, tmp_path: Path) -> None:
+        out = tmp_path / "img"
+        kvant.render([page()], store, out, renderer=pageimages.Renderer(corpus=out, run=Fake()))
+        assert [p.name for p in (out / "kvant_2018_10").iterdir()] == ["0016.png"]
 
 
 corpus_needed = pytest.mark.skipif(

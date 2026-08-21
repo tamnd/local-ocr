@@ -79,10 +79,13 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from local_ocr import corpus as corpuslib
+from local_ocr import pageimages
 from local_ocr.golden import Burned, Purpose, _rank, math_density
 
 CORPUS_ENV = "KVANT_CORPUS"
@@ -257,6 +260,57 @@ def scan(issue: str, store: Path) -> Path | None:
     digest = found.group(1)
     blob = store / "blobs" / digest[:2] / digest[2:]
     return blob if blob.is_file() else None
+
+
+def render(
+    chosen: Sequence[Page],
+    store: Path,
+    out: Path,
+    dpi: int = pageimages.DEFAULT_DPI,
+    overwrite: bool = False,
+    renderer: pageimages.Renderer | None = None,
+) -> pageimages.Built:
+    """Rasterise the pages of a set into a directory outside both trees.
+
+    The same `pdftoppm -png -r <dpi> -gray -f N -l N` the fleet builds, so that
+    a number measured here is a number about the reader and not about the
+    rasteriser. What differs from `pageimages.build` is only where the source
+    and the destination are.
+
+    The source is a blob in the content addressed store and not a path in a
+    manifest, because that is how the Kvant scans are kept. One PDF is opened
+    once per page, which sounds wasteful and is not: the set is 200 pages
+    spread over 127 issues, so the runs are one and two pages long and there is
+    nothing to batch.
+
+    The destination is a directory the caller names and neither repository. The
+    Bourbaki side writes into `images/` inside the corpus checkout, which is
+    gitignored there; the Kvant checkout has no such directory and adding one
+    would be inviting a `git add -A` to commit nine gigabytes of scan.
+    """
+    render_with = renderer or pageimages.Renderer(corpus=out, dpi=dpi)
+    built = pageimages.Built()
+    pdfs: dict[str, Path | None] = {}
+    for page in chosen:
+        there = out / page.issue / f"{page.page_index:04d}.png"
+        if there.exists() and not overwrite:
+            if pageimages.dpi_of(there) == dpi:
+                built.had.append(page.id)
+                continue
+            built.redone.append(page.id)
+        if page.issue not in pdfs:
+            pdfs[page.issue] = scan(page.issue, store)
+        source = pdfs[page.issue]
+        if source is None:
+            built.failed.append((page.id, f"no cached scan for {page.issue}"))
+            continue
+        try:
+            render_with.to(source, page.pdf_page, there)
+        except (pageimages.NoSource, subprocess.CalledProcessError) as err:
+            built.failed.append((page.id, str(err)))
+            continue
+        built.made.append(page.id)
+    return built
 
 
 @dataclass(frozen=True)
