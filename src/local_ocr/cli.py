@@ -460,7 +460,7 @@ def kvant_cmd(argv: Sequence[str]) -> int:
     from local_ocr import kvant
 
     parser = argparse.ArgumentParser(prog=f"{PROG} kvant")
-    parser.add_argument("action", choices=["draw", "check", "show", "pages", "eval"])
+    parser.add_argument("action", choices=["draw", "check", "show", "pages", "eval", "rotated"])
     parser.add_argument("--corpus", type=Path, default=None)
     parser.add_argument("--cache", type=Path, default=None)
     parser.add_argument("--name", default="", help="for show, pages and eval, which set")
@@ -478,6 +478,11 @@ def kvant_cmd(argv: Sequence[str]) -> int:
         type=Path,
         default=None,
         help="for eval, a word list; defaults to the corpus's manifests/lexicon.txt",
+    )
+    parser.add_argument(
+        "--draw",
+        action="store_true",
+        help="for rotated, redraw the set from the cached PDFs instead of scoring it",
     )
     parser.add_argument("--json", dest="json_path", type=Path, default=None)
     parser.add_argument("--markdown", dest="markdown_path", type=Path, default=None)
@@ -497,6 +502,29 @@ def kvant_cmd(argv: Sequence[str]) -> int:
             return 0
         for page_id in kvant.read_manifest(args.name):
             print(page_id)
+        return 0
+
+    if args.action == "rotated" and not args.draw:
+        # Above the corpus and cache lookup on purpose. Scoring this set needs
+        # neither: its reference is the run strings written into the manifest,
+        # which is the whole reason they were written down rather than read back
+        # out of the PDFs every time.
+        from local_ocr import rotated
+
+        if args.readings is None:
+            print(
+                f"{PROG}: kvant rotated needs --readings, or --draw to rebuild the set",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            where = rotated.reference()
+        except FileNotFoundError as err:
+            print(f"{PROG}: {err}", file=sys.stderr)
+            return 2
+        card = rotated.score(args.readings, where, model=args.model)
+        rotated.write(card, json_path=args.json_path, markdown_path=args.markdown_path)
+        print(card.to_markdown())
         return 0
 
     try:
@@ -531,6 +559,16 @@ def kvant_cmd(argv: Sequence[str]) -> int:
         for page_id, why in built.failed:
             print(f"{page_id}: {why}", file=sys.stderr)
         return 1 if built.failed else 0
+
+    if args.action == "rotated":
+        from local_ocr import rotated
+
+        chosen, where = rotated.draw(corpus, store, say=lambda m: print(m, file=sys.stderr))
+        for path in rotated.write_manifests(chosen, where):
+            print(path)
+        runs = sum(len(where[page_id]) for page_id in chosen)
+        print(f"{len(chosen)} pages carrying {runs} runs of small type set on its side")
+        return 0
 
     if args.action == "eval":
         from local_ocr import bakeoff, golden, russian
@@ -996,7 +1034,7 @@ def _usage() -> str:
         "  ocr-batch <in> <out>   read a directory of page images into Markdown\n"
         "  eval --set S --readings D   judge readings against a golden set\n"
         "  golden draw|check|show      the four golden sets and their drift\n"
-        "  kvant draw|check|show|pages|eval  the Russian tier B set and its numbers\n"
+        "  kvant draw|check|show|pages|eval|rotated  the Russian tier B set\n"
         "  serve <model>          start a shortlisted reader under vLLM\n"
         "  pages --set S          rasterise a golden set into the corpus images tree\n"
         "  mine <dir>             training pairs out of the readers' disagreements\n"
@@ -1031,6 +1069,13 @@ def _usage() -> str:
         "blocks before it scores them, because the reference there is the\n"
         "publisher's text layer and that layer has the column order wrong, so a\n"
         "straight character rate against it punishes the reader that is right.\n"
+        "\n"
+        "kvant rotated is the small type set: the illustrator credits and gutter\n"
+        "notes the magazine sets at ninety degrees, found by their boxes in the\n"
+        "publisher's text layer rather than by searching an extraction for them,\n"
+        "because an extraction that has them is not where the failure is. It scores\n"
+        "recall over runs, since half a surname helps nobody, and it scores without\n"
+        "a corpus or a cache because the runs are written into the manifest.\n"
     )
 
 

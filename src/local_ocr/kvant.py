@@ -463,6 +463,15 @@ SETS: dict[str, Set] = {
         "The same construction, disjoint, and not looked at. Run against it at "
         "a milestone and not between.",
     ),
+    "kvant-rotated": Set(
+        "kvant-rotated",
+        63,
+        False,
+        "Every corpus page that carries type set at ninety degrees, found by "
+        "the boxes in the publisher's text layer rather than by sampling. Not "
+        "held out, because it overlaps the other two by construction and is "
+        "scored on recall over its runs rather than on the page.",
+    ),
 }
 
 

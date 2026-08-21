@@ -76,6 +76,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 # And for the order metric's tests, which match Russian blocks against Russian
 # blocks and have to write a figure caption in Cyrillic to do it.
 "tests/test_order.py" = ["RUF001", "RUF002", "RUF003"]
+"src/local_ocr/rotated.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/test_rotated.py" = ["RUF001", "RUF002", "RUF003"]
 # And for the bake off's own tests, where the pages being judged are Russian and
 # one of them deliberately carries a Cyrillic es where a Latin c belongs, which
 # is the thing the homoglyph gate is there to find.
