@@ -297,7 +297,10 @@ def ocr_batch(argv: Sequence[str], reader: Reader | None = None) -> int:
         # run where asked is high and fixed is low is a run where the crop is
         # landing in the wrong place or the model is answering with prose, and
         # neither shows up anywhere else: the reading looks the same either way.
-        log(f"head pass: asked on {head.asked} pages, put a head on {head.fixed}")
+        line = f"head pass: asked on {head.asked} pages, put a head on {head.fixed}"
+        if head.completed:
+            line += f", put a lost page label back on {head.completed}"
+        log(line)
     return 0 if summary.ok else 1
 
 
