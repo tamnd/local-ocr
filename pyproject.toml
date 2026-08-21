@@ -61,6 +61,14 @@ line-length = 100
 # Added to rather than started from everything and suppressed.
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# RUF001 through RUF003 warn that a string holds a Cyrillic character that looks
+# like a Latin one. That is the subject of this module rather than a mistake in
+# it: the gate exists to find those characters where they do not belong, and the
+# Russian it is tested against is full of them where they do.
+"src/local_ocr/russian.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/test_russian.py" = ["RUF001", "RUF002", "RUF003"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
