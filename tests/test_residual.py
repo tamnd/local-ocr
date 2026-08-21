@@ -110,7 +110,21 @@ class TestAttribution:
             "EXERCICES\n\nANNEAUX SEMI-SIMPLES A VIII.144\n\nbody",
         )
         assert which == residual.CONVENTION
-        assert "first line" in note
+        assert "not on its first line" in note
+
+    def test_a_running_head_with_no_trace_anywhere_is_capability(self):
+        """The case the first version of this got wrong.
+
+        It named this one after the misplaced head without ever asking whether
+        the head was on any line, so 19 golden-dev pages went into a bucket
+        named for a defect they do not have.
+        """
+        which, note = residual._attribute_running_head(
+            "ANNEAUX SEMI-SIMPLES A VIII.144\n\nbody",
+            "EXERCICES\n\n1) Soient A un anneau semi-simple",
+        )
+        assert which == residual.CAPABILITY
+        assert "nowhere in the reading" in note
 
     def test_a_footnote_kept_under_the_printed_mark_is_convention(self):
         which, note = residual._attribute_footnotes(
