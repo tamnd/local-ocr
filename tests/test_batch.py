@@ -119,6 +119,20 @@ def test_an_empty_answer_never_reaches_a_final_path(tmp_path: Path) -> None:
     assert (opts.dst / "0001.refused").exists()
 
 
+def test_a_zero_byte_page_image_is_refused_without_asking_the_reader(tmp_path: Path) -> None:
+    # An empty input is a broken input. Sending it costs a lane and a round trip
+    # and comes back as a server error, which reads like a broken server and was
+    # in fact an interrupted copy.
+    opts = book(tmp_path, ("0001.png", "0002.png"))
+    (opts.src / "0002.png").write_bytes(b"")
+    stub = Stub()
+    summary = asyncio.run(run(opts, stub, "read this", log=lambda _: None))
+    assert summary.wrote == 1
+    assert summary.refused == ["0002.png"]
+    assert [p.name for p in stub.seen] == ["0001.png"]
+    assert "empty" in (opts.dst / "0002.refused").read_text()
+
+
 def test_a_refused_page_leaves_a_marker_and_no_markdown(tmp_path: Path) -> None:
     class Declines:
         async def read(self, image: Path, prompt: str) -> str:
