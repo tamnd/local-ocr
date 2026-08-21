@@ -33,10 +33,15 @@ lacking a macro is not the same as the model inventing one.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from functools import lru_cache
 
 from local_ocr.rules.mathtex import Span, split
+
+_SPACE = re.compile(r"\s+")
 
 # How far apart two glyphs of the same character may sit, as a fraction of the
 # larger rendering's diagonal, and still be the same glyph. Loose enough that a
@@ -229,27 +234,76 @@ class PageReport:
         return sum(1 for s in self.spans if not s.scored and s.note.startswith("unpaired"))
 
 
-def compare_pages(reference: str, read: str) -> PageReport:
-    """Pair the spans of two readings of a page by position, and score each.
+def _fold(text: str) -> str:
+    """The key two spans are lined up on, which is the source with its space taken out.
 
-    Pairing by position and not by content, because content is what is being
-    measured. A page whose spans are paired by similarity would score well by
-    construction: it would match every formula to whichever formula it most
-    resembles and never notice that the third display went missing.
+    Space is the one difference that is never a reading error here. `1_M-u` and
+    `1_M - u` print the same thing and the score for that pair is 1.0 either
+    way, so letting the spacing decide whether the two line up throws away
+    anchors for nothing. Folding it lifted exact anchors from 60.2 per cent of
+    paired spans to 69.0 per cent on golden-dev.
     """
+    return _SPACE.sub("", text)
+
+
+def pairs(left: Sequence[Span], right: Sequence[Span]) -> list[tuple[int | None, int | None]]:
+    """Line two sequences of spans up in order, and say what went unpaired.
+
+    Monotone, and not by position, and not by similarity either, which are three
+    different things and the difference is the whole point.
+
+    By position was what this did first, and it does not survive contact with a
+    real page. golden-dev has a median of fifty spans a page and only 18 of its
+    200 pages have the same number of spans on both sides, because a reader that
+    writes `M'` as prose where the reference writes it as a span, or splits
+    `p \\circ (1_M - u)` in two, has shifted every remaining span on the page.
+    Scored by position the set reads 0.2015 mean with 13.7 per cent of pairs at
+    or above 0.99. Scored through here it reads 0.7841 with 69.0 per cent. The
+    first pair on `alg-viii-fr/0041` under the old pairing was the reference's
+    `(M_i)_{i\\in I}` against the reading's `J' = J - \\{i\\}`, two spans from
+    different sentences, scored 0.000 and counted as a formula the model got
+    wrong. It measured drift and reported it as reading.
+
+    By similarity is the thing the old docstring was right to refuse and this
+    still refuses. Nothing here is free to reorder, so a display that went
+    missing cannot be quietly matched to whichever display it most resembles.
+    It falls out of the alignment as a gap and is returned unpaired, which is
+    what `PageReport.unpaired` counts and what carries the real loss: 2730 of
+    the 10730 spans on golden-dev are on one side only.
+    """
+    keys_left = [_fold(span.text) for span in left]
+    keys_right = [_fold(span.text) for span in right]
+    out: list[tuple[int | None, int | None]] = []
+    matcher = SequenceMatcher(None, keys_left, keys_right, autojunk=False)
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == "equal":
+            out.extend((i1 + k, j1 + k) for k in range(i2 - i1))
+            continue
+        # A replace block is a run neither side agreed on, and inside a run that
+        # short the order is still the best evidence there is, so it is paired
+        # off position for position and whatever is left over is a gap.
+        shared = min(i2 - i1, j2 - j1)
+        out.extend((i1 + k, j1 + k) for k in range(shared))
+        out.extend((i, None) for i in range(i1 + shared, i2))
+        out.extend((None, j) for j in range(j1 + shared, j2))
+    return out
+
+
+def compare_pages(reference: str, read: str) -> PageReport:
+    """Line the spans of two readings of a page up, and score each pair."""
     left, _ = split(reference)
     right, _ = split(read)
     report = PageReport()
-    for i in range(max(len(left), len(right))):
-        one: Span | None = left[i] if i < len(left) else None
-        other: Span | None = right[i] if i < len(right) else None
+    for i, (li, ri) in enumerate(pairs(left, right)):
+        one: Span | None = left[li] if li is not None else None
+        other: Span | None = right[ri] if ri is not None else None
         if one is None or other is None:
             report.spans.append(
                 SpanReport(
                     index=i,
                     reference=one.text if one else "",
                     read=other.text if other else "",
-                    note="unpaired: the two readings do not have the same number of spans",
+                    note="unpaired: the span is on one side of the page and not the other",
                 )
             )
             continue

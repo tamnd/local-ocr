@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from local_ocr.metrics import accepted, cdm, cer, conformance
+from local_ocr.rules import mathtex
 from local_ocr.rules.validate import Confidence, Expect, Grammar
 
 
@@ -110,7 +111,7 @@ class TestFormulas:
         with pytest.raises(cdm.Unrenderable):
             cdm.layout("\\begin{pmatrix} a & b \\end{pmatrix}")
 
-    def test_a_page_pairs_its_spans_by_position(self):
+    def test_a_page_pairs_its_spans_in_order(self):
         report = cdm.compare_pages("$a$ and $b$", "$a$ and $b$")
         assert len(report.spans) == 2
         assert report.mean == 1.0
@@ -122,6 +123,49 @@ class TestFormulas:
 
     def test_a_page_with_nothing_scorable_has_no_mean(self):
         assert cdm.compare_pages("no mathematics", "no mathematics").mean is None
+
+    def test_an_extra_span_early_does_not_shift_every_span_after_it(self):
+        """The defect the whole alignment exists for, at its smallest.
+
+        Paired by position this reads as three formulas the model got wrong and
+        one unpaired. It is one formula the model added and three it read
+        perfectly, and on a golden-dev page carrying fifty spans the difference
+        between those two readings is the difference between 0.20 and 0.78.
+        """
+        report = cdm.compare_pages("$a$ $b$ $c$", "$z$ $a$ $b$ $c$")
+        assert report.unpaired == 1
+        assert report.mean == 1.0
+        assert [s.score for s in report.scored] == [1.0, 1.0, 1.0]
+
+    def test_a_span_dropped_from_the_middle_costs_one_span_and_not_the_tail(self):
+        report = cdm.compare_pages("$a$ $b$ $c$", "$a$ $c$")
+        assert report.unpaired == 1
+        assert report.mean == 1.0
+
+    def test_spacing_does_not_decide_whether_two_spans_line_up(self):
+        """`1_M-u` and `1_M - u` print the same thing, so they are the same anchor."""
+        report = cdm.compare_pages("$1_M-u$ $b$ $c$", "$1_M - u$ $b$ $c$")
+        assert report.unpaired == 0
+        assert report.mean == 1.0
+
+    def test_a_reordered_display_is_unpaired_rather_than_matched_to_its_twin(self):
+        """Similarity pairing is still refused, which is what the old note was right about.
+
+        Nothing on a page is free to move, so a display that came back in the
+        wrong place is not the same page read in a different order. Both sides
+        fall out of the alignment as gaps rather than being quietly matched.
+        """
+        report = cdm.compare_pages("$$a + b$$ $x$ $$c + d$$", "$$c + d$$ $x$ $$a + b$$")
+        assert report.unpaired == 4, "two gaps on each side, and neither display matched"
+        assert [s.score for s in report.scored] == [1.0], "only the span that stayed put"
+
+    def test_pairs_returns_positions_and_gaps(self):
+        left, _ = mathtex.split("$a$ $b$ $c$")
+        right, _ = mathtex.split("$a$ $c$")
+        assert cdm.pairs(left, right) == [(0, 0), (1, None), (2, 1)]
+
+    def test_pairs_of_two_empty_sides_is_empty(self):
+        assert cdm.pairs([], []) == []
 
 
 class TestConformance:

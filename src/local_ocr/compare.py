@@ -311,12 +311,13 @@ def structural(first: str, second: str) -> list[Difference]:
 def formulas(first: str, second: str) -> list[Difference]:
     """Compare the mathematics of two readings, span by span, by CDM.
 
-    Pairing is by position, which `compare_pages` does and which is the right
-    thing here for the reason given there: pairing by similarity would match
-    every formula to whichever one it most resembles and never report a lost
-    display. When the two readings disagree about how many spans there are, the
-    structural comparison has already said so at high severity, and the unpaired
-    spans below carry the detail.
+    Pairing is monotone, which `compare_pages` does and which matters more here
+    than anywhere else. Two readings of the same page rarely cut it into the
+    same number of spans, and under the positional pairing this used to do, one
+    reader writing `M'` as prose turned every remaining span on the page into a
+    reported disagreement. What survives is the refusal to pair by similarity,
+    so a display one reader lost is still reported as unpaired rather than
+    quietly matched to whichever display it most resembles.
     """
     body_a = textguard.normalise(textguard.strip(first))
     body_b = textguard.normalise(textguard.strip(second))
