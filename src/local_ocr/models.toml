@@ -36,6 +36,14 @@ Reader A, the default. Qwen2.5-VL-7B trained with verifiable unit test rewards,
 whose authors report the largest gains in formulas, tables and multi column
 layout, which are the three places this corpus is hardest. FP8 weights, about
 8.5 GB, so a referee still fits beside it on 24 GB.
+
+Still the default on Russian after the M8 bake off, and now by a number rather
+than by inheritance. It is the only entry that finishes: 198 of 200 Kvant pages
+against 142 for the nearest challenger, and on the 141 pages the two share it
+has the lower content rate, 23.32 % against 34.75 %, and the lower prose rate,
+12.85 % against 29.74 %. Where it loses is order and margins, which is why the
+referee below is the one it is: tau +0.894 with thirteen inversions on its worst
+page, and 3.1 % of the small type set on its side.
 """
 # --max-model-len 32768, and it was 16384 until a real volume arrived. A 300 dpi
 #   Bourbaki page is 1831 by 2776, which is a large number of vision tokens
@@ -86,6 +94,15 @@ of running it as the second opinion: two readers that share a base model share
 their mistakes. The licence on the card is AGPL-3.0 and not the Apache based
 licence the survey expected, which is a reason to keep it as a referee rather
 than let it become the default.
+
+Not a candidate on Russian, and the reason is the model rather than a setting.
+On the M8 prompt it ran 136 of the pages it attempted to the token limit and the
+ten that finished held an English echo of the instruction with no Russian in
+them at all. Given its own native "Text Recognition:" prompt instead it produced
+32751 Latin letters against 14 Cyrillic across twelve Kvant pages, which is
+Cyrillic transliterated into Latin homoglyphs rather than read. Its native
+"Layout Detection:" prompt answers 000 000 1000 1000 image for a whole scanned
+magazine page, so its own pipeline never reaches a text block either.
 """
 args = [
   "--max-model-len", "16384",
@@ -105,6 +122,16 @@ Reader C, the multilingual one. 0.9 B, Apache-2.0, 109 languages, and a
 training set that explicitly included real world maths, synthetic equations,
 old fonts and historical documents. The first thing to try on Cyrillic and on
 Vietnamese, and the cheapest thing to keep resident.
+
+The Russian referee, chosen by the M8 bake off. It reads Cyrillic properly and
+it is right about the two things reader-a is worst at. Reading order: tau +0.972
+against reader-a's +0.894 on the 141 pages both read, and one inversion on the
+worst page against thirteen. Small type set on its side: 51.0 % of the runs on
+the 49 rotated pages both read, against reader-a's 3.1 %. It is not the default
+because it does not finish: 57 of 199 Kvant pages run to the token limit even at
+32768, and raising the window from 16384 to 32768 moved that from 71 to 57 while
+content CER got worse, which says the failure is a runaway generation rather
+than a page that did not fit.
 """
 args = [
   "--max-model-len", "16384",
@@ -124,6 +151,13 @@ against several thousand for a 7 B reader, MIT, about 8 GB, and the best blank
 page detection in the survey. One independent OmniDocBench run puts it ahead of
 olmOCR 2 and blind preference voting puts it behind, which is the disagreement
 the bake off exists to settle on Bourbaki pages rather than on invoices.
+
+Out on Russian, and out for a reason no flag can fix. 88 of the first 96 Kvant
+pages ran to the token limit at 8192, and 8192 is not a setting here: config.json
+gives max_position_embeddings 8192 and vLLM refuses to start above it. The note
+below says the optical compression makes 8192 enough, and that is true of a
+French Bourbaki page and false of a Russian magazine page, because Cyrillic
+costs far more tokens per character than the Latin the claim was measured on.
 """
 # --max-model-len 8192 and not 16384 like the rest. This model's config.json
 #   gives max_position_embeddings 8192, and vLLM refuses to start above it
@@ -149,6 +183,15 @@ Reader E, the multilingual layout one. 3 B, MIT, trained to handle any script,
 and reported to beat olmOCR 2 in 55.2 per cent of blind arena matchups. The
 repository moved from rednote-hilab to dots-studio, which is one more reason
 every entry here carries a revision rather than a branch.
+
+Out on Russian as a default and worth keeping in view. It answers on 66 of 200
+Kvant pages and returns an empty message on the rest, which is the same class of
+failure as reader-b: a layout pipeline that wants its own prompt and gives
+nothing back for anybody else's. What it does return is good, and that is the
+trap the --shared flag exists for. Over its 66 pages it beats reader-a on
+content CER, 27.33 % against 35.67 %, but those 66 are a subset it chose, and
+reader-a's own rate over the whole 200 is 26.82 %. Its reading order is the
+weakest of any reader that reads at all, tau +0.565.
 """
 # --trust-remote-code, which none of the others need. vLLM has native support
 #   for the rest, and this repository ships its own modelling code that the

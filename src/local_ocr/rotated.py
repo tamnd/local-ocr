@@ -404,6 +404,45 @@ def score(readings: Path, where: dict[str, list[Run]], *, model: str) -> Card:
     return card
 
 
+def shared(where: dict[str, list[Run]], readings: Sequence[Path]) -> dict[str, list[Run]]:
+    """The runs on the pages every one of these readers produced a reading for.
+
+    The same argument as `bakeoff.shared`, and it bites harder here. A page with
+    no reading is charged with every run on it, so a reader that answers on a
+    third of the set has two thirds of its recall decided by pages it never
+    looked at. On 2026-08-22 reader-e read 27 of the 63 pages and scored 21.4 %
+    over the whole set, and 51.9 % over the pages it and reader-a both read.
+    Neither number is wrong and a report that gives only one of them is.
+    """
+    from local_ocr.bakeoff import find_reading
+
+    return {
+        page_id: runs
+        for page_id, runs in where.items()
+        if all(find_reading(d, page_id) for d in readings)
+    }
+
+
+def table(cards: Sequence[Card]) -> str:
+    """Several readers on the rotated set, one table, ranked by recall.
+
+    Ranked, for the reason `bakeoff.table` is ranked: the point of the exercise
+    is a choice, and a table that leaves the ordering to the reader lets the
+    current default stay put because moving it would need an argument.
+    """
+    ordered = sorted(cards, key=lambda card: -card.recall())
+    out = [
+        "| Reader | Runs caught | Recall | Pages with every run caught | No reading |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for card in ordered:
+        out.append(
+            f"| {card.model} | {card.caught()} of {card.total()} | {card.recall():.1%} | "
+            f"{card.clean()} of {len(card.pages)} | {len(card.failures)} |"
+        )
+    return "\n".join(out) + "\n"
+
+
 def write(card: Card, *, json_path: Path | None, markdown_path: Path | None) -> None:
     if json_path is not None:
         json_path.parent.mkdir(parents=True, exist_ok=True)

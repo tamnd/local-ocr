@@ -204,3 +204,94 @@ class TestPages:
         assert seen["dpi"] == 600
         assert seen["overwrite"] is True
         assert seen["out"] == trees / "img"
+
+
+class TestReadingsLabels:
+    """`--readings`, which is now repeatable and optionally labelled."""
+
+    def test_one_bare_directory_is_labelled_with_the_model_flag(self) -> None:
+        assert cli._readings(["/tmp/out"], "reader-a") == [("reader-a", Path("/tmp/out"))]
+
+    def test_several_bare_directories_take_their_own_names(self) -> None:
+        # --model cannot name four of them, and a table whose rows are all
+        # called reader is worse than no table.
+        assert cli._readings(["/tmp/reader-a", "/tmp/reader-c"], "reader") == [
+            ("reader-a", Path("/tmp/reader-a")),
+            ("reader-c", Path("/tmp/reader-c")),
+        ]
+
+    def test_an_explicit_label_wins_over_both(self) -> None:
+        assert cli._readings(["c32=/tmp/out"], "reader-a") == [("c32", Path("/tmp/out"))]
+
+    def test_labelled_and_bare_can_be_mixed(self) -> None:
+        got = cli._readings(["reader-a=/tmp/one", "/tmp/reader-c"], "reader")
+        assert got == [("reader-a", Path("/tmp/one")), ("reader-c", Path("/tmp/reader-c"))]
+
+    def test_nothing_given_is_nothing_back(self) -> None:
+        assert cli._readings([], "reader-a") == []
+
+
+class TestRotatedComparison:
+    """`kvant rotated` with more than one reader, which needs neither tree."""
+
+    def make(self, root: Path, name: str, ids: list[str]) -> Path:
+        from local_ocr import rotated
+
+        where = root / name
+        for page_id in ids:
+            issue, _, number = page_id.partition("/")
+            (where / issue).mkdir(parents=True, exist_ok=True)
+            runs = " ".join(run.text for run in rotated.reference()[page_id])
+            (where / issue / f"{number}.md").write_text(f"текст {runs}", encoding="utf-8")
+        return where
+
+    def test_two_readers_print_one_ranked_table_and_not_two_cards(
+        self, capsys: pytest.CaptureFixture[str], tmp_path: Path
+    ) -> None:
+        from local_ocr import rotated
+
+        ids = sorted(rotated.reference())[:3]
+        good = self.make(tmp_path, "good", ids)
+        poor = tmp_path / "poor"
+        poor.mkdir()
+        code = cli.kvant_cmd(
+            ["rotated", "--readings", f"good={good}", "--readings", f"poor={poor}"]
+        )
+        out = capsys.readouterr().out
+        assert code == 0
+        assert out.startswith("| Reader |")
+        assert "# good on kvant-rotated" not in out
+        assert out.strip().split("\n")[2].startswith("| good |")
+
+    def test_shared_cuts_the_set_to_the_pages_both_produced(
+        self, capsys: pytest.CaptureFixture[str], tmp_path: Path
+    ) -> None:
+        from local_ocr import rotated
+
+        ids = sorted(rotated.reference())[:4]
+        both = self.make(tmp_path, "both", ids)
+        half = self.make(tmp_path, "half", ids[:2])
+        code = cli.kvant_cmd(
+            ["rotated", "--shared", "--readings", f"both={both}", "--readings", f"half={half}"]
+        )
+        got = capsys.readouterr()
+        assert code == 0
+        assert "2 pages every reader produced, out of 63" in got.err
+        # Both caught every run on the two shared pages, so the set is 4 runs
+        # and neither reader is charged for a page it never answered.
+        assert "| 4 of 4 |" in got.out
+
+    def test_one_reader_still_prints_the_card_it_always_did(
+        self, capsys: pytest.CaptureFixture[str], tmp_path: Path
+    ) -> None:
+        from local_ocr import rotated
+
+        where = self.make(tmp_path, "solo", sorted(rotated.reference())[:1])
+        assert cli.kvant_cmd(["rotated", "--readings", str(where), "--model", "solo"]) == 0
+        assert capsys.readouterr().out.startswith("# solo on kvant-rotated")
+
+    def test_no_readings_at_all_is_still_a_usage_error(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert cli.kvant_cmd(["rotated"]) == 2
+        assert "--draw" in capsys.readouterr().err

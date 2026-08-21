@@ -47,6 +47,7 @@ matched rate is reported next to it as the diagnostic it is.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -311,6 +312,24 @@ def run(
             continue
         card.pages.append(judge(page, path.read_text(encoding="utf-8"), words))
     return card
+
+
+def shared(pages: list[kvant.Page], readings: Sequence[Path]) -> list[kvant.Page]:
+    """The pages every one of these readers produced a reading for.
+
+    Two readers of the same set are not comparable page for page when one of
+    them failed on a third of it. A page with no reading is charged in full,
+    which is the right charge for a corpus pass and the wrong one for the
+    question of which reader reads better, because it mixes up how often a
+    reader answers with how well it answers when it does.
+
+    Both questions matter and this only answers the second, so a report has to
+    carry the completion counts beside the shared table or it will be read as
+    saying the reader that answered least is the best one. The Russian bake off
+    on 2026-08-22 is exactly that trap: reader-e reads 66 of 200 pages and beats
+    reader-a on content CER over those 66, while reader-a reads 198.
+    """
+    return [page for page in pages if all(find_reading(d, page.id) for d in readings)]
 
 
 def table(cards: list[Card]) -> str:
