@@ -24,7 +24,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from local_ocr import __version__, pageimages, pool, serving, wsl
+from local_ocr import __version__, finetune, pageimages, pool, serving, wsl
 from local_ocr import corpus as corpuslib
 from local_ocr.batch import DEFAULT_TIMEOUT, Options, Reader, run
 from local_ocr.corpus import NoCorpus
@@ -800,6 +800,64 @@ def pool_cmd(argv: Sequence[str]) -> int:
     return 0
 
 
+def _finetune_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=f"{PROG} finetune",
+        description="Turn the pool into what the trainer reads, and say what the run is.",
+    )
+    parser.add_argument("--pool", type=Path, required=True, help="a pool written by `pool --jsonl`")
+    parser.add_argument("--prompt-file", type=Path, required=True, help="the prompt to train under")
+    parser.add_argument("--base", required=True, help="an entry in models.toml")
+    parser.add_argument("--revision", required=True, help="the base weights, pinned")
+    parser.add_argument("--out", type=Path, default=None, help="where the dataset and card go")
+    parser.add_argument("--rank", type=int, default=finetune.RANK, help="the LoRA rank")
+    parser.add_argument(
+        "--vision-layers",
+        action="store_true",
+        help="train the vision tower, which vLLM cannot serve and which this refuses",
+    )
+    return parser
+
+
+def finetune_cmd(argv: Sequence[str]) -> int:
+    """Prepare a training run. Trains nothing: that part needs the card.
+
+    Everything that decides whether a run is a valid one happens here, and it
+    happens on any machine, which is the point of splitting it out. A recipe
+    that cannot be served is refused before the card is warmed up.
+    """
+    args = _finetune_parser().parse_args(list(argv))
+    recipe = finetune.Recipe(
+        base=args.base,
+        revision=args.revision,
+        finetune_vision_layers=args.vision_layers,
+        r=args.rank,
+        lora_alpha=args.rank,
+    )
+    try:
+        prompt = args.prompt_file.read_text(encoding="utf-8")
+        examples = finetune.read_pool(args.pool)
+        run = finetune.plan(examples, recipe, prompt)
+    except (OSError, finetune.Refused, pool.Contaminated) as err:
+        print(f"{PROG}: {err}", file=sys.stderr)
+        return 2
+
+    if args.out is not None:
+        args.out.mkdir(parents=True, exist_ok=True)
+        (args.out / "train.jsonl").write_text(
+            finetune.dataset(examples, prompt, "train"), encoding="utf-8"
+        )
+        if run.val:
+            (args.out / "val.jsonl").write_text(
+                finetune.dataset(examples, prompt, "val"), encoding="utf-8"
+            )
+        (args.out / "run.md").write_text(run.card(), encoding="utf-8")
+        print(f"{run.train} train, {run.val} val, written to {args.out}", file=sys.stderr)
+        return 0
+    print(run.card(), end="")
+    return 0
+
+
 def _mine_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"{PROG} mine",
@@ -1183,6 +1241,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return mine_cmd(rest)
     if command == "pool":
         return pool_cmd(rest)
+    if command == "finetune":
+        return finetune_cmd(rest)
     if command == "bench":
         return bench_cmd(rest)
     print(f"{PROG}: no command {command!r}\n\n{_usage()}", file=sys.stderr)
@@ -1203,6 +1263,7 @@ def _usage() -> str:
         "  pages --set S          rasterise a golden set into the corpus images tree\n"
         "  mine <dir>             training pairs out of the readers' disagreements\n"
         "  pool --jsonl F         the tier B training pool of section 08\n"
+        "  finetune --pool F      prepare a style LoRA run, and refuse a bad recipe\n"
         "  bench --plan           the six serving benchmarks of section 01\n"
         "\n"
         "A second reader is switched on with LOCAL_OCR_REFEREE, naming an entry in\n"
