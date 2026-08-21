@@ -16,6 +16,7 @@ from pathlib import Path
 
 from local_ocr.russian import (
     Flag,
+    carried,
     fold,
     gates,
     homoglyphs,
@@ -350,3 +351,44 @@ def test_the_lexicon_and_the_gate_agree_on_a_page(tmp_path: Path):
     words = lexicon(path)
     assert oov("точка прямая точка", words) == []
     assert [f.detail for f in oov("точка кривоая кривоая", words)] == ["кривоая"]
+
+
+# ---------------------------------------------------------------------------
+# Compounds
+#
+# The vocabulary the gate really runs against holds 1 557 248 word forms and not
+# one of them has a hyphen in it, so a compound has to be judged by its parts or
+# every compound on every page is unknown.
+
+KNOWN = {"из", "за", "что", "то", "какой", "бета", "распада", "морскую", "кастрюле"}
+
+
+def test_a_compound_the_list_does_not_hold_is_known_when_its_parts_are():
+    assert carried("из-за", KNOWN)
+    assert carried("что-то", KNOWN)
+    assert carried("бета-распада", KNOWN)
+
+
+def test_a_compound_with_one_part_the_list_does_not_hold_is_not_known():
+    """The stricter reading. A misread inside a compound leaves a bad part."""
+    assert not carried("кастрюле-скороварке", KNOWN)
+
+
+def test_a_plain_word_is_still_judged_whole():
+    assert carried("морскую", KNOWN)
+    assert not carried("морьскую", KNOWN)
+
+
+def test_a_word_the_list_holds_whole_is_known_even_with_a_hyphen_in_it():
+    assert carried("из-за", KNOWN | {"из-за"})
+
+
+def test_a_bare_hyphen_is_not_a_word():
+    assert not carried("-", KNOWN)
+    assert not carried("--", KNOWN)
+
+
+def test_the_gate_stops_flagging_ordinary_compounds():
+    """What this cost on real pages: 43 of 57 flags on kvant-dev were these."""
+    page = "из-за из-за что-то что-то морьскую морьскую"
+    assert [f.detail for f in oov(page, KNOWN)] == ["морьскую"]
