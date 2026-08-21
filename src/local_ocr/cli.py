@@ -399,6 +399,48 @@ def evaluate_cmd(argv: Sequence[str]) -> int:
     return 0
 
 
+def residual_cmd(argv: Sequence[str]) -> int:
+    """The section 05 residual failure report, which is section 08's precondition."""
+    from local_ocr import golden, residual
+
+    parser = argparse.ArgumentParser(prog=f"{PROG} residual")
+    parser.add_argument("--set", dest="set_name", default="golden-dev", help="which golden set")
+    parser.add_argument(
+        "--readings",
+        action="append",
+        default=[],
+        metavar="[NAME=]DIR",
+        help="a revision of the prompt; repeat it, oldest first, so the spread means something",
+    )
+    parser.add_argument("--corpus", type=Path, default=None)
+    parser.add_argument("--markdown", dest="markdown_path", type=Path, default=None)
+    parser.add_argument(
+        "--purpose", choices=[p.value for p in golden.Purpose], default="development"
+    )
+    args = parser.parse_args(list(argv))
+
+    if not args.readings:
+        print(f"{PROG}: residual needs at least one --readings", file=sys.stderr)
+        return 2
+    try:
+        pages = golden.load(args.set_name, purpose=golden.Purpose(args.purpose), corpus=args.corpus)
+    except (golden.Burned, KeyError, NoCorpus) as err:
+        print(f"{PROG}: {err}", file=sys.stderr)
+        return 2
+
+    judged = [
+        residual.judge(name, pages, where) for name, where in _readings(args.readings, "reader")
+    ]
+    text = residual.report(judged, args.set_name)
+    if args.markdown_path is None:
+        print(text)
+    else:
+        args.markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown_path.write_text(text, encoding="utf-8")
+        print(f"{PROG}: written to {args.markdown_path}", file=sys.stderr)
+    return 0
+
+
 def _drift(path: Path | None) -> list[str]:
     if path is None:
         return []
@@ -1076,6 +1118,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return evaluate_cmd(rest)
     if command == "golden":
         return golden_cmd(rest)
+    if command == "residual":
+        return residual_cmd(rest)
     if command == "kvant":
         return kvant_cmd(rest)
     if command == "serve":
@@ -1098,6 +1142,7 @@ def _usage() -> str:
         "  ocr-batch <in> <out>   read a directory of page images into Markdown\n"
         "  eval --set S --readings D   judge readings against a golden set\n"
         "  golden draw|check|show      the four golden sets and their drift\n"
+        "  residual --readings D  what the prompt did not fix, convention or capability\n"
         "  kvant draw|check|show|pages|eval|rotated  the Russian tier B set\n"
         "  serve <model>          start a shortlisted reader under vLLM\n"
         "  pages --set S          rasterise a golden set into the corpus images tree\n"
