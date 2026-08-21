@@ -104,6 +104,22 @@ class TestMissing:
     def test_a_bare_folio_still_is_one(self) -> None:
         assert not missing("496\n\nTABLE DES MATIERES\n")
 
+    def test_a_head_that_ends_in_a_full_stop_is_still_a_head(self) -> None:
+        """hist prints the stop, and the veto on it cost 36 pages of that volume.
+
+        Every one of them was read three times and went dead on a running head
+        the page really carries. 96 first lines across the 4698 raw readings on
+        disk are short, mostly capitals and end in a stop, 93 of them in hist,
+        and a 15 line sample of those held no prose at all.
+        """
+        for head in (
+            "234  23. HAAR MEASURE. CONVOLUTION.",
+            "17. INFINITESIMAL CALCULUS.",
+            "PREFACE.",
+            "TABLE OF CONTENTS.",
+        ):
+            assert not missing(f"{head}\n\nThe body of the page follows here.\n"), head
+
 
 class TestUsable:
     def test_a_head_comes_back_as_itself(self) -> None:
@@ -119,6 +135,10 @@ class TestUsable:
 
     def test_a_sentence_is_not_a_head(self) -> None:
         assert usable("The strip shows the top of a page.") is None
+
+    def test_a_capitals_head_with_a_stop_comes_back(self) -> None:
+        """The full stop is not what tells a head from a sentence. The case is."""
+        assert usable("23. HAAR MEASURE. CONVOLUTION.") == "23. HAAR MEASURE. CONVOLUTION."
 
     def test_nothing_at_all_is_not_a_head(self) -> None:
         assert usable("   ") is None
@@ -206,16 +226,17 @@ class TestPass:
         """What keeps a gate that fires more often from being worse than one that fires less.
 
         The gate can be wrong the other way round: a head that is genuinely up
-        there and that fails the test for some small reason, here a full stop the
-        reader put on the end of it. The strip then hands back the line the page
-        already opens with, and putting that on the front would give the page two
-        heads, which is a worse reading than the one that arrived.
+        there and that fails the test for some small reason, here the small
+        capitals of a title come back lower case from the page and in capitals
+        from the strip. The strip then hands back the line the page already opens
+        with, and putting that on the front would give the page two heads, which
+        is a worse reading than the one that arrived.
 
         Passed through rather than corrected, because this module never rewrites
         a line the reader produced. The page is still rejected by rule 4 and read
         again, which is the outcome the module promises for a page it cannot fix.
         """
-        body = "TABLE DES MATIERES.\n\nCHAPITRE VIII. Modules et anneaux semi-simples\n"
+        body = "Table des matieres\n\nCHAPITRE VIII. Modules et anneaux semi-simples\n"
         stub = Stub(page=body, head="TABLE DES MATIERES")
         reader = HeadPass(stub)
         assert asyncio.run(reader.read(page, "read this")) == body
