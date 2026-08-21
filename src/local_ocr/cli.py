@@ -24,7 +24,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from local_ocr import __version__, pageimages, serving
+from local_ocr import __version__, pageimages, serving, wsl
 from local_ocr import corpus as corpuslib
 from local_ocr.batch import DEFAULT_TIMEOUT, Options, Reader, run
 from local_ocr.corpus import NoCorpus
@@ -781,11 +781,19 @@ def serve_cmd(argv: Sequence[str], exec_: Callable[[str, list[str]], None] | Non
         # the number it produces is attributed to the wrong configuration.
         print(f"{PROG}: {entry.name} with {shlex.join(extra)} appended", file=sys.stderr)
 
+    added, notes = wsl.additions()
+    for note in notes:
+        print(f"{PROG}: {note}", file=sys.stderr)
+
     command = entry.command(args.vllm, extra)
     if args.dry:
-        print(entry.shell(args.vllm, extra))
+        # With the additions in front, so the printed line is one a person can
+        # paste on the box it was printed on and get the same server.
+        assignments = [f"{name}={value}" for name, value in sorted(added.items())]
+        print(shlex.join(assignments + command) if assignments else entry.shell(args.vllm, extra))
         return 0
 
+    os.environ.update(added)
     (exec_ or os.execvp)(command[0], command)
     return 1  # unreachable when execvp succeeds, which is the point of it
 
