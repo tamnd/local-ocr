@@ -209,7 +209,7 @@ def _attribute_statement_heads(ref: str, read: str) -> tuple[str, str]:
 
 
 def _attribute_running_head(ref: str, read: str) -> tuple[str, str]:
-    """Three failures wearing one name, and only one of them is a reading failure.
+    """Four failures wearing one name, and they do not share a fix.
 
     The page label is set at the outer margin in type several sizes down from
     the body, so a reading that kept the words of the head and dropped `A
@@ -217,10 +217,19 @@ def _attribute_running_head(ref: str, read: str) -> tuple[str, str]:
     the number. That is the same failure the Kvant rotated set measures and it
     is the one entry here that a prompt was never going to reach.
 
-    The other two are conventions. A head that is a bare label with no words has
-    nothing on the line to make it look like a heading, so the reader starts at
-    the section title below it instead, and a head that is gone entirely while
-    the body is intact is a reader that did not treat the top strip as text.
+    A head that is a bare label with no words is a convention. There is nothing
+    on that line to make it look like a heading, so the reader starts at the
+    section title below it instead, and being told is enough to fix that.
+
+    A head somewhere in the reading but not on its first line is a convention
+    too, and it is the one with a fix that is neither prompt nor weights: the
+    head pass exists to put it back and did not.
+
+    A head with no trace of it anywhere is capability, and the first version of
+    this function got that wrong. It called the case `the head is not the first
+    line of the reading` without ever checking whether the head was on any line,
+    which put 19 golden-dev pages in a bucket named for a defect they do not
+    have. They are pages the reader never transcribed the top strip of at all.
     """
     # conformance_reference is the one text with the running head put back, so
     # its first line is the head and no lookup is needed to find it.
@@ -232,7 +241,9 @@ def _attribute_running_head(ref: str, read: str) -> tuple[str, str]:
         return CAPABILITY, "the words of the head, without the page label set in the margin"
     if not words:
         return CONVENTION, "the head is a bare label and the reading started at the section title"
-    return CONVENTION, "the head is not the first line of the reading"
+    if _survived(words, read):
+        return CONVENTION, "the head is in the reading but not on its first line"
+    return CAPABILITY, "the head's own words are nowhere in the reading"
 
 
 def _attribute_footnotes(ref: str, read: str) -> tuple[str, str]:
