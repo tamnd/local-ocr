@@ -22,6 +22,12 @@ def build(name: str, *, model: str, base_url: str) -> Reader:
         from local_ocr.backends.openai_vision import OpenAIVisionReader
 
         return OpenAIVisionReader(model=model, base_url=base_url)
+    if name == "codex":
+        # The local ChatGPT subscription. No URL and no VRAM, which is why it
+        # is the one referee on the M6 shortlist that can run beside reader A.
+        from local_ocr.backends.codex import MODEL, CodexReader
+
+        return CodexReader(model=model or MODEL)
     if name == "echo":
         from local_ocr.backends.echo import EchoReader
 

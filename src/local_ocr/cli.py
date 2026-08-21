@@ -131,10 +131,7 @@ def _prompt(args: argparse.Namespace) -> str:
     return args.prompt
 
 
-def _reader(args: argparse.Namespace) -> Reader:
-    from local_ocr.backends import build
-
-    reader = build(args.backend, model=args.model, base_url=args.base_url)
+def _head(reader: Reader) -> Reader:
     if os.environ.get("LOCAL_OCR_HEAD_PASS", "1") == "0":
         return reader
     # On by default, and not a command line argument, because the fleet builds
@@ -144,6 +141,108 @@ def _reader(args: argparse.Namespace) -> Reader:
     # environment variable is for measuring the pass, which is the only reason
     # to turn it off.
     return HeadPass(reader)
+
+
+def _entry(name: str) -> serving.Model | None:
+    """The shortlist entry for a name, or nothing if there is not one."""
+    try:
+        return serving.model(name)
+    except (serving.NoSuchModel, OSError, ValueError):
+        return None
+
+
+def _budget(default: int) -> int:
+    """Adjudications a page may pay for, from the environment.
+
+    Zero is allowed and means compare but never spend, which is how the catch
+    rate is measured without paying for the crops. Anything unparseable falls
+    back rather than failing the batch, because this arrives through a unit file
+    and a typo there should not cost a night of reading.
+    """
+    raw = os.environ.get("LOCAL_OCR_BUDGET", "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def _referee_prompt(log: Callable[[str], None]) -> str:
+    """What to ask the referee, when it does not read the fleet prompt.
+
+    A path rather than the text itself, because these are model cards' words and
+    they belong in a file next to the run that used them. Unreadable is not
+    fatal: the referee is then asked what the primary was asked, which is the
+    behaviour without the variable at all.
+    """
+    raw = os.environ.get("LOCAL_OCR_REFEREE_PROMPT_FILE", "").strip()
+    if not raw:
+        return ""
+    try:
+        return Path(raw).read_text(encoding="utf-8")
+    except OSError as err:
+        log(f"{PROG}: referee prompt {raw}: {err}, asking it what the primary was asked")
+        return ""
+
+
+def _second(args: argparse.Namespace, primary: Reader, log: Callable[[str], None]) -> Reader:
+    """Put a referee behind the primary, if one is configured.
+
+    Through the environment, for the reason `_head` gives: the fleet builds a
+    fixed command line and cannot pass a flag. `LOCAL_OCR_REFEREE` names an
+    entry in `models.toml`, which is where the port lives, so a referee is
+    switched on with one variable and no other configuration.
+
+    A name that is not in the shortlist and has no URL is not fatal. The batch
+    runs on the primary alone and says so, because a referee misspelt in a unit
+    file should cost the second opinion and not the pages.
+
+    `codex` is the exception to the URL rule. It is a subprocess against the
+    local subscription rather than a server, so there is nothing to point a URL
+    at, and it is the only referee that needs no VRAM. Set
+    `LOCAL_OCR_REFEREE=codex` and it runs beside reader A on the same card.
+    """
+    name = os.environ.get("LOCAL_OCR_REFEREE", "").strip()
+    if not name:
+        return primary
+
+    from local_ocr.backends import build
+    from local_ocr.second import BUDGET, SecondPass
+
+    backend, entry = args.backend, _entry(name)
+    url = os.environ.get("LOCAL_OCR_REFEREE_URL", "").strip() or (entry.url if entry else "")
+    if name.startswith("codex"):
+        from local_ocr.backends.codex import MODEL
+
+        backend, url = "codex", ""
+        name = name[6:].lstrip(":") or MODEL
+    elif not url:
+        log(
+            f"{PROG}: no referee {name!r} in models.toml and no LOCAL_OCR_REFEREE_URL, "
+            "reading with one reader"
+        )
+        return primary
+
+    mine = _entry(args.model)
+    return SecondPass(
+        primary,
+        _head(build(backend, model=name, base_url=url)),
+        second_prompt=_referee_prompt(log),
+        crop_prompt=_referee_prompt(log),
+        budget=_budget(BUDGET),
+        names=(args.model, name),
+        models=(mine.repo if mine else "", entry.repo if entry else ""),
+        revisions=(mine.revision if mine else "", entry.revision if entry else ""),
+    )
+
+
+def _reader(args: argparse.Namespace, log: Callable[[str], None]) -> Reader:
+    from local_ocr.backends import build
+
+    primary = _head(build(args.backend, model=args.model, base_url=args.base_url))
+    return _second(args, primary, log)
 
 
 def ocr_batch(argv: Sequence[str], reader: Reader | None = None) -> int:
@@ -168,8 +267,6 @@ def ocr_batch(argv: Sequence[str], reader: Reader | None = None) -> int:
         return 2
 
     opts = _options(args)
-    if reader is None:
-        reader = _reader(args)
 
     def log(line: str) -> None:
         # Standard output is redirected to the log file by the caller, so this
@@ -178,14 +275,59 @@ def ocr_batch(argv: Sequence[str], reader: Reader | None = None) -> int:
         # explanation is a batch nobody can debug.
         print(line, flush=True)
 
+    if reader is None:
+        reader = _reader(args, log)
+
+    from local_ocr.second import SecondPass
+
+    if isinstance(reader, SecondPass):
+        # Before the run, so the one time warning about a missing referee lands
+        # in the same log as the pages.
+        reader.log = log
+
     summary = asyncio.run(run(opts, reader, prompt, log=log))
-    if isinstance(reader, HeadPass) and reader.asked:
+
+    if isinstance(reader, SecondPass):
+        _sidecars(reader, opts, log)
+        log(reader.summary())
+    head = reader.first if isinstance(reader, SecondPass) else reader
+    if isinstance(head, HeadPass) and head.asked:
         # The one line that says whether the second look was worth its time. A
         # run where asked is high and fixed is low is a run where the crop is
         # landing in the wrong place or the model is answering with prose, and
         # neither shows up anywhere else: the reading looks the same either way.
-        log(f"head pass: asked on {reader.asked} pages, put a head on {reader.fixed}")
+        log(f"head pass: asked on {head.asked} pages, put a head on {head.fixed}")
     return 0 if summary.ok else 1
+
+
+def _sidecars(reader: object, opts: Options, log: Callable[[str], None]) -> int:
+    """Write one record beside each page the second pass read.
+
+    After the run rather than during it, because a `Reader` is handed an image
+    and hands back text and has no idea where the Markdown for it is going. This
+    does, so this writes them.
+
+    Only beside a page that actually landed. A refused page has no `.md` and a
+    record of how two readers failed to produce one belongs in the log, not in a
+    file the miner will later read as if it described a reading.
+
+    The name ends in `.ocr.json`, which the Go poller's `grep -c '\\.md$'` does
+    not count, so this is invisible to the transport by construction.
+    """
+    from local_ocr.batch import output_for
+
+    wrote = 0
+    for image, record in reader.records.items():  # type: ignore[attr-defined]
+        answer = output_for(image, opts)
+        if not answer.exists():
+            continue
+        try:
+            record.write(answer)
+        except OSError as err:
+            log(f"{answer.name}: sidecar not written: {err}")
+            continue
+        wrote += 1
+    return wrote
 
 
 def _eval_parser() -> argparse.ArgumentParser:
@@ -347,6 +489,67 @@ def pages_cmd(argv: Sequence[str]) -> int:
     return 1 if built.failed else 0
 
 
+def _mine_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=f"{PROG} mine",
+        description="Mine training candidates out of adjudicated disagreements.",
+    )
+    parser.add_argument("root", type=Path, help="a directory of readings and their sidecars")
+    parser.add_argument("--jsonl", type=Path, default=None, help="write the pairs here")
+    parser.add_argument("--markdown", type=Path, default=None, help="write the summary here")
+    parser.add_argument(
+        "--caught",
+        action="store_true",
+        help="report what the referee found that the acceptance rules did not",
+    )
+    return parser
+
+
+def mine_cmd(argv: Sequence[str]) -> int:
+    """Turn a directory of sidecars into labelled pairs, and say how many.
+
+    Reads only. Running it twice on the same output produces the same pairs,
+    which is what makes it safe to point at a tree that a batch is still
+    writing into.
+    """
+    from local_ocr import mine as mining
+    from local_ocr import sidecar as sidecarlib
+    from local_ocr.second import caught
+
+    args = _mine_parser().parse_args(list(argv))
+    if not args.root.is_dir():
+        print(f"{PROG}: {args.root} is not a directory", file=sys.stderr)
+        return 2
+
+    if args.caught:
+        records = []
+        for path in mining.sidecars(args.root):
+            try:
+                records.append(sidecarlib.load(path))
+            except (OSError, ValueError):
+                continue
+        shape = caught(records)
+        print(
+            f"{shape['pages']} pages, {shape['passed_gates']} passed every rule, "
+            f"{shape['disagreed']} disagreed, {shape['caught']} caught, "
+            f"{shape['high']} of high severity"
+        )
+        return 0
+
+    candidates = mining.mine(args.root)
+    if args.jsonl is not None:
+        args.jsonl.parent.mkdir(parents=True, exist_ok=True)
+        args.jsonl.write_text(mining.to_jsonl(candidates), encoding="utf-8")
+        print(f"{len(candidates)} candidates, written to {args.jsonl}", file=sys.stderr)
+    text = mining.report(candidates)
+    if args.markdown is not None:
+        args.markdown.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown.write_text(text, encoding="utf-8")
+        return 0
+    print(text, end="")
+    return 0
+
+
 def _serve_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"{PROG} serve",
@@ -446,6 +649,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return serve_cmd(rest)
     if command == "pages":
         return pages_cmd(rest)
+    if command == "mine":
+        return mine_cmd(rest)
     print(f"{PROG}: no command {command!r}\n\n{_usage()}", file=sys.stderr)
     return 2
 
@@ -460,6 +665,12 @@ def _usage() -> str:
         "  golden draw|check|show      the four golden sets and their drift\n"
         "  serve <model>          start a shortlisted reader under vLLM\n"
         "  pages --set S          rasterise a golden set into the corpus images tree\n"
+        "  mine <dir>             training pairs out of the readers' disagreements\n"
+        "\n"
+        "A second reader is switched on with LOCAL_OCR_REFEREE, naming an entry in\n"
+        "models.toml. It reads every page after the primary does, the two readings\n"
+        "are compared, and a disagreement is settled by sending the disputed strip\n"
+        "back cropped. LOCAL_OCR_BUDGET caps that at three adjudications a page.\n"
         "\n"
         f"{PROG} ocr-batch is a drop-in for the chatgpt-tool subcommand of the same\n"
         "name, so that the Bourbaki fleet can drive this machine with no change to\n"
