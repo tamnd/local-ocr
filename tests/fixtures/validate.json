@@ -363,6 +363,57 @@
       "problems": []
     },
     {
+      "name": "rule 4 rejects a paragraph that cites a page label",
+      "why": "ParsePageLabel searches the line, so a paragraph carrying a citation used to answer yes to the head-label branch and the page was accepted with no head at all.",
+      "text": "still hold for generalized formal power series, by the argument of A VIII.202, and the corollary above applies to each of them without change in this case.\n\nLet $E$ be a set and let $R$ be a relation on $E$. We say that $R$ is an\nequivalence relation if it is reflexive, symmetric and transitive. The set of\nequivalence classes is written $E/R$, and the canonical mapping of $E$ onto\n$E/R$ sends each element to the class containing it. Every mapping of $E$ into\na set $F$ which is constant on each class factors uniquely through $E/R$.",
+      "expect": {
+        "book": "alg-iv-vii",
+        "pdf_page": 45,
+        "blank": false,
+        "sparse": false,
+        "grammar": "head-label",
+        "chapter": "IV",
+        "page": 7,
+        "confidence": "head",
+        "has_head": true
+      },
+      "problems": [
+        {
+          "rule": "head",
+          "detail": "the first line reads as prose, not a running head: \"still hold for generalized formal power series, by the argum…\"",
+          "line": 1
+        },
+        {
+          "rule": "label",
+          "detail": "the page says chapter VIII, the page map says IV",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "name": "rule 4 rejects a display opener as a head",
+      "why": "A line with no letters in it reads as a bare folio to the capitals test, and a reader that opens the page on a display writes \\[ and nothing else.",
+      "text": "\\[\n\nLet $E$ be a set and let $R$ be a relation on $E$. We say that $R$ is an\nequivalence relation if it is reflexive, symmetric and transitive. The set of\nequivalence classes is written $E/R$, and the canonical mapping of $E$ onto\n$E/R$ sends each element to the class containing it. Every mapping of $E$ into\na set $F$ which is constant on each class factors uniquely through $E/R$.",
+      "expect": {
+        "book": "alg-i-iii",
+        "pdf_page": 46,
+        "blank": false,
+        "sparse": false,
+        "grammar": "foot-number",
+        "chapter": "",
+        "page": 0,
+        "confidence": "foot",
+        "has_head": true
+      },
+      "problems": [
+        {
+          "rule": "head",
+          "detail": "the first line reads as prose, not a running head: \"\\\\[\"",
+          "line": 1
+        }
+      ]
+    },
+    {
       "name": "rule 5 accepts two unreadable spots",
       "why": "Up to two is a damaged scan, and these are damaged scans.",
       "text": "A VIII.13\n\nLet $E$ be a set and let $R$ be a relation on $E$. We say that $R$ is an\nequivalence relation if it is reflexive, symmetric and transitive. The set of\nequivalence classes is written $E/R$, and the canonical mapping of $E$ onto\n$E/R$ sends each element to the class containing it. Every mapping of $E$ into\na set $F$ which is constant on each class factors uniquely through $E/R$.\n\nThe symbol ⟪illegible⟫ stands where ⟪illegible⟫ could not be read.",

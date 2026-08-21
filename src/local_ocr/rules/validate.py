@@ -27,6 +27,22 @@ chapter III, about 400 characters. Two hundred is under half of that and still
 well above what a truncated answer or a one line apology comes to.
 """
 
+LONGEST_HEAD = 90
+"""How long a running head is allowed to be.
+
+Bourbaki prints a chapter name and a page label and nothing else up there. Over
+the 200 pages of golden-dev the longest one printed is 64 characters, so 90 is
+not a tight bound, it is room for a printing whose heads run longer than any of
+these do.
+
+It is a named constant because two places need it and one of them did not have
+it. `parse_page_label` and `parse_section_locator` both search the string they
+are given rather than matching it, which is what their other callers want, since
+the job there is to pull a locator out of the middle of a citation. Ask either of
+them whether a 473 character paragraph is a running head, because it happens to
+cite `II, § 4`, and it says yes.
+"""
+
 MAX_ILLEGIBLE = 2
 """How many unreadable spots a page may carry and still be accepted.
 
@@ -356,6 +372,16 @@ def _check_head(head: str, expect: Expect) -> Problem | None:
             "the first line is empty, the page map says this page has a running head",
             1,
         )
+    # Before the grammar, because it is true under both of them and because the
+    # label branch below is the one that let it through. 9 of the 200 readings
+    # on golden-dev open with a paragraph of body text carrying a citation, and
+    # this rule called every one of them a page with a running head.
+    if len(head.strip()) > LONGEST_HEAD:
+        return Problem(
+            Rule.HEAD,
+            f"the first line reads as prose, not a running head: {quote(_clip(head))}",
+            1,
+        )
     if expect.grammar == Grammar.HEAD_LABEL:
         if parse_page_label(head) is None:
             return Problem(Rule.HEAD, f"no page label in the first line: {quote(_clip(head))}", 1)
@@ -381,7 +407,7 @@ def looks_like_head(line: str) -> bool:
     person reads anyway.
     """
     line = line.strip()
-    if len(line) > 90:
+    if len(line) > LONGEST_HEAD:
         return False  # a running head is not a paragraph
     if line.endswith(".") and not line.endswith("no."):
         return False  # a sentence, not a head
@@ -393,7 +419,10 @@ def looks_like_head(line: str) -> bool:
             letters += 1
             upper += 1
     if letters == 0:
-        return True  # a bare number or a locator
+        # A bare number or a locator, both of which carry a digit. Without the
+        # digit the line is punctuation, and the one that turns up is a reader
+        # opening the page on a display and writing \\[ or \\( on the first line.
+        return any(ch.isdigit() for ch in line)
     # Bourbaki sets its running heads in capitals. Half is enough, because the
     # small capitals of a chapter title come back from OCR mixed.
     return upper * 2 >= letters
