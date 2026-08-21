@@ -68,24 +68,60 @@ NOTHING = ("none", "none.", "no running head", "n/a", "-")
 LONGEST = 90
 
 
+def reads_as_head(line: str) -> bool:
+    """Whether a line is already a running head, and so not worth asking about.
+
+    Three tests, and the order matters only in that the first one is the one
+    that was missing. `parse_page_label` and `parse_section_locator` both search
+    the line rather than matching it, which is right where they are used to pull
+    a locator out of a citation and wrong here, because it makes any paragraph
+    that happens to cite `A VIII.144` or `§ 5` answer yes to `is this line a
+    running head`. On the 200 golden-dev readings that was not a corner case:
+
+      nine readings open with a paragraph of body text that answers yes,
+      the longest of them 1425 characters,
+      against a longest genuinely printed head on the same set of 64.
+
+    So the length gate comes first and the rest follow it. 90 rather than 64 is
+    the same number `usable` uses and it leaves a printing whose heads run long
+    more room than these do.
+
+    A line with no letter and no digit is not a head either. `\\[` and `\\(` are
+    what a reader writes when the page opens on a display, they carry no
+    letters, and the capitals test reads a letterless line as a bare folio and
+    waves it through. Two golden-dev pages are exactly that.
+    """
+    line = line.strip()
+    if not line or len(line) > LONGEST:
+        return False
+    if not any(ch.isalnum() for ch in line):
+        return False
+    if parse_page_label(line) is not None or parse_section_locator(line) is not None:
+        return True
+    return looks_like_head(line)
+
+
 def missing(text: str) -> bool:
     """Whether the reading needs a head put on it.
 
-    Deliberately the same loose test the acceptance rule applies, so the pass
-    fires on the pages the rule would reject and on no others. It cannot be the
-    rule itself: the rule knows from the page map whether a page prints a head
-    at all, and the reader does not have the page map. A page that prints no
-    head gets one asked for, the strip comes back NONE, and nothing happens.
+    Close to the test the acceptance rule applies, and where it differs it is
+    stricter, in one direction and on purpose. The rule is a mirror of the Go
+    rules in tamnd/bourbaki-solver and its verdicts are pinned by generated
+    fixtures, so it is not the place to make this change; the cost of being
+    stricter here is one crop of one tenth of a page on a page that may not have
+    needed it, and the cost of being looser is a page that enters the corpus
+    with a paragraph where its head should be.
+
+    It cannot be the rule itself for a second reason: the rule knows from the
+    page map whether a page prints a head at all, and the reader does not have
+    the page map. A page that prints no head gets one asked for, the strip comes
+    back NONE, and nothing happens.
     """
     for line in text.splitlines():
         first = line.strip()
         if not first:
             continue
-        if parse_page_label(first) is not None:
-            return False
-        if parse_section_locator(first) is not None:
-            return False
-        return not looks_like_head(first)
+        return not reads_as_head(first)
     return True  # an empty reading, which has other problems
 
 
@@ -97,11 +133,19 @@ def usable(answer: str) -> str | None:
     line = lines[0].strip("`").strip()
     if not line or line.lower() in NOTHING:
         return None
-    if len(line) > LONGEST:
-        return None
-    if parse_page_label(line) is not None or parse_section_locator(line) is not None:
-        return line
-    return line if looks_like_head(line) else None
+    return line if reads_as_head(line) else None
+
+
+def _same(head: str, text: str) -> bool:
+    """Whether the strip handed back the line the reading already opens with.
+
+    Compared on the letters and digits alone, because the two came out of two
+    different requests and the spacing and the punctuation around a page label
+    are the first things to differ between them.
+    """
+    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    key = "".join(ch for ch in head.casefold() if ch.isalnum())
+    return bool(key) and key == "".join(ch for ch in first.casefold() if ch.isalnum())
 
 
 def band(image: Path, out: Path, fraction: float = BAND) -> Path:
@@ -162,6 +206,13 @@ class HeadPass:
                 return text
         head = usable(answer)
         if head is None:
+            return text
+        if _same(head, text):
+            # The gate thought the page had no head and the strip disagreed by
+            # handing back the line the page already opens with. Prepending it
+            # would give the page two heads, which is a worse reading than the
+            # one that arrived, so the reading is passed through and the ask is
+            # counted rather than the fix.
             return text
         self.fixed += 1
         return f"{head}\n\n{text.lstrip()}"

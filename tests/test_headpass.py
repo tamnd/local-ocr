@@ -73,6 +73,37 @@ class TestMissing:
     def test_an_empty_reading_counts_as_missing(self) -> None:
         assert missing("   \n\n")
 
+    def test_a_paragraph_citing_a_page_label_is_not_a_head(self) -> None:
+        """The gate's own failure, and the one that kept the pass off the pages that needed it.
+
+        `parse_page_label` searches the line, so a paragraph of body text that
+        cites another page answered yes to `is this line a running head` and the
+        second look was never taken. Nine of the 200 golden-dev readings open
+        with a paragraph that does this.
+        """
+        body = (
+            "(II, §5, No. 1, p. 278, Proposition 2) that the homomorphisms are those "
+            "of A VIII.202, and the argument of the preceding paragraph applies to each "
+            "of them without change, which is what was to be shown here.\n"
+        )
+        assert len(body.strip()) > 90
+        assert missing(body)
+
+    def test_a_paragraph_citing_a_section_is_not_a_head_either(self) -> None:
+        body = (
+            "b) On suppose desormais que A est la seule sous-A-algebre de K qui soit un "
+            "corps, et on applique le resultat du § 3 a la famille consideree ci-dessus.\n"
+        )
+        assert missing(body)
+
+    def test_a_display_opener_is_not_a_head(self) -> None:
+        """A letterless line reads as a bare folio to the capitals test, and `\\[` is not one."""
+        assert missing("\\[\n= \\prod_{x \\in H} g_1 c(s(x)^{-1})\n")
+        assert missing("\\(\n")
+
+    def test_a_bare_folio_still_is_one(self) -> None:
+        assert not missing("496\n\nTABLE DES MATIERES\n")
+
 
 class TestUsable:
     def test_a_head_comes_back_as_itself(self) -> None:
@@ -169,6 +200,25 @@ class TestPass:
         stub = Stub(head="NONE")
         reader = HeadPass(stub)
         assert asyncio.run(reader.read(page, "read this")) == BARE
+        assert reader.asked == 1 and reader.fixed == 0
+
+    def test_a_head_the_page_already_opens_with_is_not_prepended_twice(self, page: Path) -> None:
+        """What keeps a gate that fires more often from being worse than one that fires less.
+
+        The gate can be wrong the other way round: a head that is genuinely up
+        there and that fails the test for some small reason, here a full stop the
+        reader put on the end of it. The strip then hands back the line the page
+        already opens with, and putting that on the front would give the page two
+        heads, which is a worse reading than the one that arrived.
+
+        Passed through rather than corrected, because this module never rewrites
+        a line the reader produced. The page is still rejected by rule 4 and read
+        again, which is the outcome the module promises for a page it cannot fix.
+        """
+        body = "TABLE DES MATIERES.\n\nCHAPITRE VIII. Modules et anneaux semi-simples\n"
+        stub = Stub(page=body, head="TABLE DES MATIERES")
+        reader = HeadPass(stub)
+        assert asyncio.run(reader.read(page, "read this")) == body
         assert reader.asked == 1 and reader.fixed == 0
 
     def test_a_refused_second_look_does_not_lose_the_page(self, page: Path) -> None:
