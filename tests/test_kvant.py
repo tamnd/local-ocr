@@ -228,8 +228,7 @@ def test_a_sheet_digest_is_not_mistaken_for_the_pdf_digest(tmp_path):
     pdf = "22" * 32
     (tmp_path / "pages").mkdir()
     (tmp_path / "pages" / "kvant_2018_10.yaml").write_text(
-        f"sheets:\n  - ord: 0\n    file: '0000'\n    sha256: {sheet}\n"
-        f"pdf:\n  sha256: {pdf}\n",
+        f"sheets:\n  - ord: 0\n    file: '0000'\n    sha256: {sheet}\npdf:\n  sha256: {pdf}\n",
         encoding="utf-8",
     )
     blobs = tmp_path / "blobs" / pdf[:2]
