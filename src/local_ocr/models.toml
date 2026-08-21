@@ -37,10 +37,18 @@ whose authors report the largest gains in formulas, tables and multi column
 layout, which are the three places this corpus is hardest. FP8 weights, about
 8.5 GB, so a referee still fits beside it on 24 GB.
 """
-# --max-model-len 16384: a 300 dpi Bourbaki page is 1831 by 2776, which is a
-#   large number of vision tokens before a word is generated, and a dense page
-#   answers in 1500 to 3000. This holds the 1400 token prompt, the image and a
-#   long answer without paying for context nothing uses.
+# --max-model-len 32768, and it was 16384 until a real volume arrived. A 300 dpi
+#   Bourbaki page is 1831 by 2776, which is a large number of vision tokens
+#   before a word is generated, and a dense page answers in 1500 to 3000, so
+#   16384 held the 1400 token prompt, the image and a long answer with room to
+#   spare. What it did not hold is a page the corpus keeps at 600 dpi. Two of
+#   the first eight pages of Theory of Sets read here are 3662 by 5552, four
+#   times the pixels, and both came back HTTP 400: input length 18303 exceeds
+#   the model's maximum context length 16384. That is the §01 600 dpi retry
+#   headroom, measured rather than assumed, and the answer it gave was no.
+#   32768 takes an 18303 token page and a 3000 token answer with half the
+#   window still free, and costs KV cache that this card has: the weights are
+#   8.5 GB of 24.
 # --limit-mm-per-prompt {"image": 1}: one page per request, always. The queue, the
 #   acceptance rules and the page file are all per page, and two pages in one
 #   prompt would let a single bad answer poison both.
@@ -58,7 +66,7 @@ layout, which are the three places this corpus is hardest. FP8 weights, about
 #   came back correct, in 793 tokens, matching the publisher's own text layer
 #   almost word for word. An FP8 model does not imply an FP8 KV cache.
 args = [
-  "--max-model-len", "16384",
+  "--max-model-len", "32768",
   "--max-num-seqs", "16",
   "--limit-mm-per-prompt", '{"image": 1}',
   "--gpu-memory-utilization", "0.86",
