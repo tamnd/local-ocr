@@ -235,15 +235,92 @@ def test_two_different_wordless_blocks_do_not_match():
     assert got.matched == 0
 
 
-def test_two_identical_markers_match_and_that_is_the_known_limit():
-    """A two word marker carries no information beyond itself, so the matcher
-    cannot tell one page's `Рис. 1.` from another's. Within a page, which is the
-    only place this metric is used, that is the right answer. Across pages it is
-    meaningless, and it is why a page made mostly of markers has a coverage
-    number worth very little.
+def test_two_short_markers_match_on_one_shared_word_and_that_is_the_known_limit():
+    """The price of scoring over the smaller block rather than over the two
+    together. `Рис. 1.` and `Рис. 2.` share one word of the two each of them has,
+    which is half, which clears the threshold, so in isolation the matcher calls
+    them the same block and it is wrong.
+
+    It is paid because the alternative was worse. Scoring over the two together
+    is what made a correct paragraph inside a fused column run unmatchable, and
+    that cost 30 points of content CER on the dev set against a handful of
+    characters here.
+
+    On a page it mostly does not arise, because a block proposes only its best
+    partner and an exact marker beats a marker off by a digit.
     """
     assert order("Рис. 1.", "Рис. 1.").matched == 1
-    assert order("Рис. 1.", "Рис. 2.").matched == 0
+    assert order("Рис. 1.", "Рис. 2.").matched == 1
+
+    page = order("Рис. 1.\n\nРис. 2.", "Рис. 2.\n\nРис. 1.")
+    assert page.matched == 2
+    assert page.inversions == 1
+
+
+# ---------------------------------------------------------------------------
+# The two sides disagreeing about where a block ends
+#
+# Both directions happen on one real Kvant page. The publisher's text layer
+# shatters a display heading into one block a word and fuses a column of
+# paragraphs into one block, so the matching has to put several blocks of one
+# side against several of the other.
+
+
+def test_a_reference_block_split_into_words_still_matches_the_line_that_holds_them():
+    """The shattered heading. The text layer writes a title one word a block."""
+    shattered = "\n\n".join(["Achilles", "and", "the", "tortoise"])
+    got = order("Achilles and the tortoise", shattered)
+    assert got.expected == 4
+    assert got.matched == 4
+    assert got.coverage == 1.0
+
+
+def test_the_shattered_blocks_come_back_as_one_pair_and_nothing_is_dropped():
+    shattered = "\n\n".join(["Achilles", "and", "the", "tortoise"])
+    pairs, dropped, extra = paired("Achilles and the tortoise", shattered)
+    assert len(pairs) == 1
+    assert pairs[0][0] == "Achilles and the tortoise"
+    assert pairs[0][1] == "Achilles\n\nand\n\nthe\n\ntortoise"
+    assert dropped == []
+    assert extra == []
+
+
+def test_paragraphs_fused_into_one_reference_block_still_match():
+    """The other direction. A column run holds five paragraphs in one block.
+
+    Under a rate over the two sides together each paragraph scored at most its
+    own length over the run's, so a correct reading matched nothing at all.
+    """
+    fused = " ".join(LEFT)
+    got = order("\n\n".join(LEFT), fused)
+    assert got.expected == 1
+    assert got.matched == 1
+
+    pairs, dropped, extra = paired("\n\n".join(LEFT), fused)
+    assert len(pairs) == 1
+    assert pairs[0][0] == "\n\n".join(LEFT)
+    assert dropped == []
+    assert extra == []
+
+
+def test_a_fused_run_counts_once_towards_the_tau_and_not_once_a_paragraph():
+    """Otherwise the reference's segmentation would weigh on order as well.
+
+    The reading here has the right column first and the left column fused into
+    one reference block. That is one pair out of order, not three, because the
+    three paragraphs of the run are one passage.
+    """
+    got = order("\n\n".join(RIGHT + LEFT), " ".join(LEFT) + "\n\n" + "\n\n".join(RIGHT))
+    assert got.inversions == 3
+    assert got.matched == 4
+
+
+def test_a_block_the_reading_never_produced_is_still_reported_dropped():
+    """The grouping must not quietly absorb what was not read."""
+    pairs, dropped, extra = paired("\n\n".join(LEFT), "\n\n".join(LEFT + RIGHT))
+    assert len(pairs) == 3
+    assert dropped == RIGHT
+    assert extra == []
 
 
 def test_the_threshold_is_where_it_says_it_is():
