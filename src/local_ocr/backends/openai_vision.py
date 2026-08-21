@@ -75,6 +75,16 @@ class OpenAIVisionReader:
     # caught, by finish_reason below and by the per page timeout.
     max_tokens: int | None = None
     _client: httpx.AsyncClient | None = field(default=None, init=False, repr=False)
+    _usage: dict[Path, tuple[int, int]] = field(default_factory=dict, init=False, repr=False)
+    """What the server charged for each page, until somebody asks for it.
+
+    `read` returns text, because every caller wants text and threading a second
+    value through all of them to serve the sidecar would be the tail wagging the
+    dog. So the counts wait here under the page they belong to and `usage` takes
+    them away. The event loop is single threaded, so a page cannot be filed and
+    collected at once, and the dictionary is bounded below because collection
+    removes the entry.
+    """
 
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -126,4 +136,33 @@ class OpenAIVisionReader:
             # A truncated page fails RuleShort on the Go side anyway, and it is
             # much cheaper to say so here than to ship it and read it twice.
             raise Refused("the answer hit the token limit and is truncated")
+        # Last, after every refusal above it. A truncated page did cost the
+        # server something, but nothing writes a sidecar for a page that was
+        # refused, so filing here would leave counts sitting under that page's
+        # path for a retry of the same page to collect as its own.
+        self._file(image, payload.get("usage"))
         return text
+
+    # A page that is refused files nothing, so a refusal leaves the counts at
+    # zero rather than at the counts of whichever page was read before it.
+    def _file(self, image: Path, usage: object) -> None:
+        if not isinstance(usage, dict):
+            return
+        prompt = usage.get("prompt_tokens")
+        completion = usage.get("completion_tokens")
+        if not isinstance(prompt, int) or not isinstance(completion, int):
+            return
+        # 512 is a long way above any concurrency this runs at, and it is here
+        # so that a caller that never collects cannot grow this without bound.
+        if len(self._usage) >= 512:
+            self._usage.clear()
+        self._usage[image] = (prompt, completion)
+
+    def usage(self, image: Path) -> tuple[int, int] | None:
+        """What the server charged for this page, once, or None if it did not say.
+
+        vLLM and SGLang both report it. A gateway or a subprocess reader may not,
+        and a zero in the sidecar means nobody counted rather than nothing was
+        spent, which is why this is None and not (0, 0).
+        """
+        return self._usage.pop(image, None)

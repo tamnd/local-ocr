@@ -214,3 +214,63 @@ class TestBatchLine:
     ) -> None:
         out = self.run(tmp_path, HeadPass(Stub(page=HEADED)), capsys)
         assert "head pass" not in out
+
+
+class Counting(Stub):
+    """A reader that reports what each call cost, the way a vLLM server does."""
+
+    def __init__(self, page: str = BARE, head: str = "A VIII.10 ARTINIAN MODULES") -> None:
+        super().__init__(page=page, head=head)
+        self.spent: dict[Path, tuple[int, int]] = {}
+
+    async def read(self, image: Path, prompt: str) -> str:
+        text = await super().read(image, prompt)
+        # The strip is a tenth of the page, and it is charged like one.
+        self.spent[image] = (1400, 700) if len(self.seen) == 1 else (160, 12)
+        return text
+
+    def usage(self, image: Path) -> tuple[int, int] | None:
+        return self.spent.pop(image, None)
+
+
+class TestUsage:
+    """The head pass costs tokens on most pages, and they were going nowhere.
+
+    The strip is written into a temporary directory that is deleted before
+    anybody asks the wrapper what the page cost, so the strip's counts have to be
+    moved onto the page's key while the strip still exists. On the M6 run the
+    second look ran on 90 of 122 pages, so this is most of the difference between
+    a sidecar that adds up and one that does not.
+    """
+
+    def test_a_page_that_needed_no_head_costs_what_the_page_cost(self, page: Path) -> None:
+        reader = HeadPass(Counting(page=HEADED))
+        asyncio.run(reader.read(page, "read this"))
+        assert reader.usage(page) == (1400, 700)
+
+    def test_a_page_that_needed_one_costs_the_page_and_the_strip(self, page: Path) -> None:
+        reader = HeadPass(Counting())
+        asyncio.run(reader.read(page, "read this"))
+        assert reader.usage(page) == (1560, 712)
+
+    def test_the_strip_is_not_charged_to_the_next_page(self, page: Path) -> None:
+        reader = HeadPass(Counting())
+        asyncio.run(reader.read(page, "read this"))
+        assert reader.usage(page) == (1560, 712)
+        assert reader.usage(page) is None
+
+    def test_a_reader_that_does_not_count_is_still_a_reader(self, page: Path) -> None:
+        # codex is a subprocess against a subscription and reports nothing, and
+        # requiring a usage of every reader would break it for a sidecar field.
+        reader = HeadPass(Stub())
+        asyncio.run(reader.read(page, "read this"))
+        assert reader.usage(page) is None
+
+    def test_a_reader_whose_usage_raises_does_not_lose_the_page(self, page: Path) -> None:
+        class Angry(Stub):
+            def usage(self, image: Path) -> tuple[int, int] | None:
+                raise RuntimeError("no")
+
+        reader = HeadPass(Angry())
+        assert "A VIII.10" in asyncio.run(reader.read(page, "read this"))
+        assert reader.usage(page) is None
