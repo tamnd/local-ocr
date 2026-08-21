@@ -19,6 +19,7 @@ from local_ocr.russian import (
     fold,
     gates,
     homoglyphs,
+    lexicon,
     oov,
     prose,
     rate,
@@ -310,3 +311,42 @@ def test_the_vocabulary_reads_the_whole_tree(tmp_path: Path):
     deep.mkdir(parents=True)
     (deep / "one.md").write_text("окружность окружность окружность\n", encoding="utf-8")
     assert "окружность" in vocabulary(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# The vocabulary the corpus already has written down
+
+
+def test_the_lexicon_is_read_folded_so_a_lookup_never_has_to_fold_it(tmp_path: Path):
+    """1.5 M entries folded once beats folding the page's words against them.
+
+    And it is the same fold `oov` uses, so a list that spells a word with ё and
+    a page that spells it without are the same entry rather than an unknown
+    word repeated down the page, which is exactly the flag this gate exists to
+    make mean something.
+    """
+    path = tmp_path / "lexicon.txt"
+    path.write_text("Ещё\nТОЧКА\nпрямая\n", encoding="utf-8")
+    assert lexicon(path) == {"еще", "точка", "прямая"}
+
+
+def test_the_header_the_go_side_writes_is_not_taken_for_vocabulary(tmp_path: Path):
+    """The real file opens with several comment lines saying where it came from."""
+    path = tmp_path / "lexicon.txt"
+    path.write_text("# built from the corpus\n# plus a published form list\nточка\n", "utf-8")
+    assert lexicon(path) == {"точка"}
+
+
+def test_a_blank_line_in_the_lexicon_is_not_a_word(tmp_path: Path):
+    path = tmp_path / "lexicon.txt"
+    path.write_text("точка\n\n   \nпрямая\n", encoding="utf-8")
+    assert lexicon(path) == {"точка", "прямая"}
+
+
+def test_the_lexicon_and_the_gate_agree_on_a_page(tmp_path: Path):
+    """The pair that matters, since either alone can be right and the two wrong."""
+    path = tmp_path / "lexicon.txt"
+    path.write_text("точка\nпрямая\n", encoding="utf-8")
+    words = lexicon(path)
+    assert oov("точка прямая точка", words) == []
+    assert [f.detail for f in oov("точка кривоая кривоая", words)] == ["кривоая"]

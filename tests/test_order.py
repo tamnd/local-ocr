@@ -12,7 +12,7 @@ of 1, and that is only not a lie because `coverage` is reported next to it.
 
 from __future__ import annotations
 
-from local_ocr.metrics.order import MATCH, Order, blocks, order
+from local_ocr.metrics.order import MATCH, Order, blocks, order, paired
 
 # Six paragraphs with no shared vocabulary beyond the function words, so that a
 # block matches its own counterpart and nothing else.
@@ -271,3 +271,63 @@ def test_a_perfect_reading_prints_a_signed_tau():
 def test_the_result_is_hashable_so_a_run_can_be_grouped_by_it():
     assert isinstance(hash(order(READING, READING)), int)
     assert isinstance(order(READING, READING), Order)
+
+
+# ---------------------------------------------------------------------------
+# The pairing underneath, which the Russian bake off scores inside
+
+
+def test_the_pairs_come_back_in_reference_order_however_they_were_read():
+    """The point of exposing this at all.
+
+    A reading whose columns are interleaved is matched block for block against
+    the reference and handed back in the reference's order, so a character rate
+    computed over the pairs is a rate about the characters and not about the
+    order. The order question is answered separately by the tau.
+    """
+    pairs, dropped, extra = paired(INTERLEAVED, READING)
+    assert [want for _, want in pairs] == LEFT + RIGHT
+    assert [read for read, _ in pairs] == LEFT + RIGHT
+    assert dropped == []
+    assert extra == []
+
+
+def test_a_reference_block_nothing_matched_comes_back_as_dropped():
+    pairs, dropped, extra = paired("\n\n".join(LEFT), READING)
+    assert len(pairs) == 3
+    assert dropped == RIGHT
+    assert extra == []
+
+
+def test_a_block_the_reading_invented_comes_back_as_extra():
+    """Separately from the dropped ones, because they cost different things.
+
+    A dropped reference block is text the reader did not produce and the bake
+    off charges every character of it. An extra block is text the reference does
+    not have, which on a Kvant page is usually a caption the text layer omitted,
+    so charging it in full would punish the better reading.
+    """
+    invented = "\n\n".join([*LEFT, "A caption under the figure that the text layer never had."])
+    pairs, dropped, extra = paired(invented, "\n\n".join(LEFT))
+    assert len(pairs) == 3
+    assert dropped == []
+    assert extra == ["A caption under the figure that the text layer never had."]
+
+
+def test_the_pairs_and_the_tau_agree_about_which_block_is_which():
+    """One matcher underneath both, which is why this holds.
+
+    They were two before, and two greedy passes over the same blocks can differ
+    on a page where a block matches two others nearly as well, which would leave
+    a run reporting a character rate and an order score computed against
+    different pairings of the same page.
+    """
+    pairs, _, _ = paired(INTERLEAVED, READING)
+    assert len(pairs) == order(INTERLEAVED, READING).matched
+
+
+def test_pairing_nothing_against_a_page_drops_the_whole_page():
+    pairs, dropped, extra = paired("", READING)
+    assert pairs == []
+    assert dropped == LEFT + RIGHT
+    assert extra == []

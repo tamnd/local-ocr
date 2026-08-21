@@ -134,10 +134,19 @@ def test_a_page_with_no_letters_at_all_is_not_called_russian():
     assert kvant.cyrillic_share("123 456 789") == 0.0
 
 
-def test_the_sheet_ordinal_is_not_the_pdf_page():
-    """Off by one here renders the whole set one sheet early."""
-    assert page(page_index=0).pdf_page == 1
-    assert page(page_index=16).pdf_page == 17
+def test_asking_a_sheet_which_pdf_page_it_is_on_raises_and_says_where_to_look():
+    """This used to answer, and the answer was wrong on every page of the first batch.
+
+    It returned the ordinal plus one. The ordinal is already one based and the
+    scan manifests describe the publisher's JPGs rather than the PDF, so the two
+    differ by the covers and the inserts: -2 for every 2007 issue, 0 for 2008,
+    and neither for ten of the 130 cached ones. There is no arithmetic that
+    covers that, so the property is gone and the answer has to come from
+    `align`, which reads the PDF and matches.
+    """
+    with pytest.raises(AttributeError) as err:
+        _ = page(page_index=16).pdf_page
+    assert "align()" in str(err.value)
 
 
 def test_the_printed_number_and_the_sheet_ordinal_are_kept_apart():
@@ -286,36 +295,171 @@ def store(tmp_path: Path) -> Path:
     return cache
 
 
+NOUNS = (
+    "точка",
+    "прямая",
+    "окружность",
+    "треугольник",
+    "квадрат",
+    "вершина",
+    "сторона",
+    "медиана",
+    "радиус",
+    "хорда",
+    "касательная",
+    "плоскость",
+    "отрезок",
+    "сектор",
+    "призма",
+    "цилиндр",
+    "трапеция",
+    "делитель",
+    "остаток",
+    "многочлен",
+)
+
+
+def sheet(n: int) -> kvant.Page:
+    """A sheet whose vocabulary no other sheet here shares.
+
+    Three nouns off a disjoint window, so the overlap between any two of these
+    is zero and a match against the wrong PDF page cannot happen by luck. Real
+    pages are not this convenient, which is what `SURE` is measured against.
+    """
+    return page(page_index=n, body=" ".join(NOUNS[(3 * n + k) % len(NOUNS)] for k in range(3)))
+
+
+def layout(pages, offset: int = -2, length: int = 40):
+    """A PDF text layer holding each sheet's own words `offset` from its ordinal.
+
+    Returned as the callable `align` and `render` take, because the fixture PDF
+    is nine bytes of header and pdftotext would find nothing in it. The offset
+    defaults to -2 because that is what the 2007 issues really are, and because
+    a fixture that used +1 would let the arithmetic this module used to do pass
+    by accident.
+    """
+    text = [f"Пустая страница {'ю' * n}" for n in range(1, length + 1)]
+    for one in pages:
+        text[one.page_index + offset - 1] = one.body
+    return lambda _pdf: text
+
+
+PLAIN = layout([page()])
+"""The layout for the default fixture sheet, which most of the render tests use."""
+
+
+class TestAlign:
+    def test_a_sheet_is_found_where_its_own_words_are_and_not_at_its_ordinal(
+        self, store: Path
+    ) -> None:
+        chosen = [sheet(16)]
+        assert kvant.align(chosen, store, layout(chosen)) == {"kvant_2018_10/0016": 14}
+
+    def test_a_sheet_no_pdf_page_looks_like_is_left_out_rather_than_guessed(
+        self, store: Path
+    ) -> None:
+        # The whole point of the threshold. An unrendered page is a hole in a run
+        # and somebody notices; a page rendered from the wrong sheet reads as
+        # ordinary Russian and scores badly for reasons nobody can see.
+        chosen = [sheet(16), page(page_index=20, body=RUSSIAN)]
+        assert kvant.align(chosen, store, layout([chosen[0]])) == {"kvant_2018_10/0016": 14}
+
+    def test_a_sheet_whose_offset_disagrees_with_the_issue_is_dropped(self, store: Path) -> None:
+        """A confident match is not enough on its own.
+
+        Two sheets sit two pages back and the third sits one page back, which
+        cannot be true of one PDF, so the odd one is a coincidence in the
+        vocabulary rather than the page. The majority offset decides and the
+        outlier goes unrendered.
+        """
+        chosen = [sheet(16), sheet(17), sheet(18)]
+        text = layout(chosen)([])
+        text[18 - 1 - 2] = "Пустая страница ююююю"
+        text[18 - 1 - 1] = chosen[2].body
+        found = kvant.align(chosen, store, lambda _pdf: text)
+        assert found == {"kvant_2018_10/0016": 14, "kvant_2018_10/0017": 15}
+
+    def test_a_sheet_with_no_russian_on_it_is_skipped_and_does_not_divide_by_zero(
+        self, store: Path
+    ) -> None:
+        chosen = [sheet(16), page(page_index=17, body="123 456")]
+        assert kvant.align(chosen, store, layout(chosen)) == {"kvant_2018_10/0016": 14}
+
+    def test_a_pdf_that_matches_nothing_gives_nothing_rather_than_an_arbitrary_offset(
+        self, store: Path
+    ) -> None:
+        chosen = [sheet(16), sheet(17)]
+        assert kvant.align(chosen, store, lambda _pdf: ["", "", ""]) == {}
+
+
 class TestRender:
-    def test_the_image_is_named_by_the_sheet_and_the_page_asked_for_is_the_next_one(
+    def test_the_page_asked_for_is_the_one_the_pdf_says_and_not_the_sheet_ordinal(
         self, store: Path, tmp_path: Path
     ) -> None:
-        """The one off by one this module can make, in the one place it makes it.
+        """The one off by one this module used to make, now measured out of it.
 
-        The corpus files sheet 16 as `0016.md` and the same sheet is page 17 of
-        the PDF, so the image has to be named from one number and rendered from
-        the other. Getting it wrong renders the whole set one sheet early and
-        every page still reads, so nothing downstream would complain.
+        The corpus files sheet 16 as `0016.md` and the image keeps that name,
+        but which page of the PDF carries it is a question for the PDF. Here it
+        is page 14. Getting this wrong renders a real Kvant page that is not the
+        one the file beside it is named for, and every page still reads, so
+        nothing downstream would complain.
         """
         fake = Fake()
         out = tmp_path / "img"
+        chosen = [sheet(16)]
         built = kvant.render(
-            [page(page_index=16)],
+            chosen,
             store,
             out,
             renderer=pageimages.Renderer(corpus=out, run=fake),
+            text=layout(chosen),
         )
         assert built.made == ["kvant_2018_10/0016"]
         assert (out / "kvant_2018_10" / "0016.png").exists()
         command = fake.commands[0]
-        assert command[command.index("-f") + 1] == "17"
+        assert command[command.index("-f") + 1] == "14"
+
+    def test_a_sheet_no_pdf_page_matches_is_reported_and_not_rendered(
+        self, store: Path, tmp_path: Path
+    ) -> None:
+        fake = Fake()
+        out = tmp_path / "img"
+        built = kvant.render(
+            [sheet(16)],
+            store,
+            tmp_path / "img",
+            renderer=pageimages.Renderer(corpus=out, run=fake),
+            text=lambda _pdf: ["", ""],
+        )
+        assert built.made == []
+        assert fake.commands == []
+        assert built.failed[0][0] == "kvant_2018_10/0016"
+        assert "no PDF page matches" in built.failed[0][1]
+
+    def test_a_pdf_with_no_text_layer_costs_its_own_issue_and_not_the_run(
+        self, store: Path, tmp_path: Path
+    ) -> None:
+        # pdftotext exits non zero on a file it cannot open, and one broken blob
+        # in a cache of 130 is a few pages short rather than a dead run.
+        def broken(_pdf):
+            raise OSError("pdftotext is not on this machine")
+
+        built = kvant.render([sheet(16)], store, tmp_path / "img", text=broken)
+        assert built.made == []
+        assert "no PDF page matches" in built.failed[0][1]
 
     def test_the_source_is_the_blob_the_issue_manifest_points_at(
         self, store: Path, tmp_path: Path
     ) -> None:
         fake = Fake()
         out = tmp_path / "img"
-        kvant.render([page()], store, out, renderer=pageimages.Renderer(corpus=out, run=fake))
+        kvant.render(
+            [page()],
+            store,
+            out,
+            renderer=pageimages.Renderer(corpus=out, run=fake),
+            text=PLAIN,
+        )
         assert fake.commands[0][-2] == str(kvant.scan("kvant_2018_10", store))
 
     def test_the_images_go_where_the_caller_said_and_into_neither_tree(
@@ -326,7 +470,13 @@ class TestRender:
         # and a set of 200 scans landing in it is a `git add -A` away from being
         # committed.
         out = tmp_path / "somewhere else"
-        kvant.render([page()], store, out, renderer=pageimages.Renderer(corpus=out, run=Fake()))
+        kvant.render(
+            [page()],
+            store,
+            out,
+            renderer=pageimages.Renderer(corpus=out, run=Fake()),
+            text=PLAIN,
+        )
         assert (out / "kvant_2018_10" / "0016.png").exists()
         assert list(store.rglob("*.png")) == []
 
@@ -348,7 +498,11 @@ class TestRender:
 
         out = tmp_path / "img"
         built = kvant.render(
-            [page()], store, out, renderer=pageimages.Renderer(corpus=out, run=Nothing())
+            [page()],
+            store,
+            out,
+            renderer=pageimages.Renderer(corpus=out, run=Nothing()),
+            text=PLAIN,
         )
         assert built.made == []
         assert len(built.failed) == 1
@@ -362,7 +516,12 @@ class TestRender:
         png(out / "kvant_2018_10" / "0016.png", 300)
         fake = Fake()
         built = kvant.render(
-            [page()], store, out, dpi=300, renderer=pageimages.Renderer(corpus=out, run=fake)
+            [page()],
+            store,
+            out,
+            dpi=300,
+            renderer=pageimages.Renderer(corpus=out, run=fake),
+            text=PLAIN,
         )
         assert built.had == ["kvant_2018_10/0016"]
         assert fake.commands == []
@@ -381,6 +540,7 @@ class TestRender:
             out,
             dpi=600,
             renderer=pageimages.Renderer(corpus=out, dpi=600, run=Fake()),
+            text=PLAIN,
         )
         assert built.made == ["kvant_2018_10/0016"]
         assert built.redone == ["kvant_2018_10/0016"]
@@ -400,6 +560,7 @@ class TestRender:
             dpi=300,
             overwrite=True,
             renderer=pageimages.Renderer(corpus=out, run=fake),
+            text=PLAIN,
         )
         assert built.made == ["kvant_2018_10/0016"]
         assert len(fake.commands) == 1
@@ -416,9 +577,13 @@ class TestRender:
             kvant, "scan", lambda issue, s: (looked.append(issue), real(issue, s))[1]
         )
         out = tmp_path / "img"
-        chosen = [page(page_index=n) for n in (16, 17, 18)]
+        chosen = [sheet(n) for n in (16, 17, 18)]
         built = kvant.render(
-            chosen, store, out, renderer=pageimages.Renderer(corpus=out, run=Fake())
+            chosen,
+            store,
+            out,
+            renderer=pageimages.Renderer(corpus=out, run=Fake()),
+            text=layout(chosen),
         )
         assert len(built.made) == 3
         assert looked == ["kvant_2018_10"]
@@ -434,13 +599,20 @@ class TestRender:
             out,
             dpi=400,
             renderer=pageimages.Renderer(corpus=out, dpi=400, run=fake),
+            text=PLAIN,
         )
         command = fake.commands[0]
         assert command[:5] == ["pdftoppm", "-png", "-r", "400", "-gray"]
 
     def test_nothing_of_the_working_name_is_left_behind(self, store: Path, tmp_path: Path) -> None:
         out = tmp_path / "img"
-        kvant.render([page()], store, out, renderer=pageimages.Renderer(corpus=out, run=Fake()))
+        kvant.render(
+            [page()],
+            store,
+            out,
+            renderer=pageimages.Renderer(corpus=out, run=Fake()),
+            text=PLAIN,
+        )
         assert [p.name for p in (out / "kvant_2018_10").iterdir()] == ["0016.png"]
 
 

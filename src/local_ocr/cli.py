@@ -449,7 +449,7 @@ def golden_cmd(argv: Sequence[str]) -> int:
 
 
 def kvant_cmd(argv: Sequence[str]) -> int:
-    """`kvant draw`, `check`, `show` and `pages`, the Russian tier B set.
+    """`kvant draw`, `check`, `show`, `pages` and `eval`, the Russian tier B set.
 
     A separate command from `golden` and not a flag on it, because it reads a
     different corpus out of a different environment variable and a different
@@ -459,16 +459,32 @@ def kvant_cmd(argv: Sequence[str]) -> int:
     from local_ocr import kvant
 
     parser = argparse.ArgumentParser(prog=f"{PROG} kvant")
-    parser.add_argument("action", choices=["draw", "check", "show", "pages"])
+    parser.add_argument("action", choices=["draw", "check", "show", "pages", "eval"])
     parser.add_argument("--corpus", type=Path, default=None)
     parser.add_argument("--cache", type=Path, default=None)
-    parser.add_argument("--name", default="", help="for show and pages, which set")
+    parser.add_argument("--name", default="", help="for show, pages and eval, which set")
     parser.add_argument("--out", type=Path, default=None, help="for pages, where images go")
     parser.add_argument("--dpi", type=int, default=pageimages.DEFAULT_DPI)
     parser.add_argument(
         "--overwrite",
         action="store_true",
         help="re-render pages already on disk, which is how a dpi change takes effect",
+    )
+    parser.add_argument("--readings", type=Path, default=None, help="for eval, Markdown to judge")
+    parser.add_argument("--model", default="reader", help="for eval, the name on the card")
+    parser.add_argument(
+        "--lexicon",
+        type=Path,
+        default=None,
+        help="for eval, a word list; defaults to the corpus's manifests/lexicon.txt",
+    )
+    parser.add_argument("--json", dest="json_path", type=Path, default=None)
+    parser.add_argument("--markdown", dest="markdown_path", type=Path, default=None)
+    parser.add_argument(
+        "--purpose",
+        choices=[p.value for p in Purpose],
+        default=Purpose.DEVELOPMENT.value,
+        help="what the numbers are for; the held out set only opens for a milestone",
     )
     args = parser.parse_args(list(argv))
 
@@ -514,6 +530,32 @@ def kvant_cmd(argv: Sequence[str]) -> int:
         for page_id, why in built.failed:
             print(f"{page_id}: {why}", file=sys.stderr)
         return 1 if built.failed else 0
+
+    if args.action == "eval":
+        from local_ocr import bakeoff, golden, russian
+
+        if args.readings is None:
+            print(f"{PROG}: kvant eval needs --readings, a directory of Markdown", file=sys.stderr)
+            return 2
+        name = args.name or "kvant-dev"
+        try:
+            chosen = kvant.load(name, purpose=Purpose(args.purpose), corpus=corpus)
+        except (golden.Burned, KeyError, kvant.NoKvant, FileNotFoundError) as err:
+            print(f"{PROG}: {err}", file=sys.stderr)
+            return 2
+        words_at = args.lexicon or corpus / "manifests" / "lexicon.txt"
+        if not words_at.is_file():
+            # Not fatal. The two gates are a part of the card and the character
+            # rates are the rest of it, and a missing word list should cost the
+            # part it pays for rather than the whole run.
+            print(f"{PROG}: no lexicon at {words_at}, the word gate will stay quiet")
+            words: set[str] = set()
+        else:
+            words = russian.lexicon(words_at)
+        card = bakeoff.run(chosen, args.readings, words, model=args.model, set_name=name)
+        bakeoff.write(card, json_path=args.json_path, markdown_path=args.markdown_path)
+        print(card.to_markdown())
+        return 0
 
     drawn = kvant.draw(corpus, store)
     for path in kvant.write_manifests(drawn):
@@ -744,7 +786,7 @@ def _usage() -> str:
         "  ocr-batch <in> <out>   read a directory of page images into Markdown\n"
         "  eval --set S --readings D   judge readings against a golden set\n"
         "  golden draw|check|show      the four golden sets and their drift\n"
-        "  kvant draw|check|show|pages the Russian tier B set, its drift, its images\n"
+        "  kvant draw|check|show|pages|eval  the Russian tier B set and its numbers\n"
         "  serve <model>          start a shortlisted reader under vLLM\n"
         "  pages --set S          rasterise a golden set into the corpus images tree\n"
         "  mine <dir>             training pairs out of the readers' disagreements\n"
@@ -767,6 +809,11 @@ def _usage() -> str:
         "kvant pages wants --out as well, a directory in neither tree, because the\n"
         "Kvant checkout has nowhere that images are ignored the way the Bourbaki\n"
         "one has images/.\n"
+        "\n"
+        "kvant eval is the Russian bake off and is not local-ocr eval. It matches\n"
+        "blocks before it scores them, because the reference there is the\n"
+        "publisher's text layer and that layer has the column order wrong, so a\n"
+        "straight character rate against it punishes the reader that is right.\n"
     )
 
 
