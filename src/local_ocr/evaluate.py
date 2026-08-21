@@ -81,16 +81,33 @@ def expect_from(page: corpuslib.Page) -> Expect:
     )
 
 
+def printed_number(label: str) -> int | None:
+    """The page number out of a page label, so `A VIII.144` gives 144."""
+    digits = "".join(ch for ch in label.rpartition(".")[2] if ch.isdigit())
+    return int(digits) if digits else None
+
+
 def head_line(page: corpuslib.Page) -> str:
     """The running head of a page, put back together as one line.
 
-    Only ever used to give the conformance check something to compare against,
-    and never used in the character error rate. The order the two halves are
-    printed in alternates between the verso and the recto, and the front matter
-    does not record which way round this page had them, so a line built here is
-    a line that is right about its contents and may be wrong about its order.
-    That is fine for a check that parses a page label out of it and worthless
-    for a metric that counts characters, which is why the two are kept apart.
+    The front matter records the title and the page label separately and does
+    not record which way round the page printed them, so the order has to come
+    from somewhere. It comes from the page number, and the rule was measured
+    rather than assumed. Over the 131 golden-dev pages that print both halves
+    and whose reading carries both:
+
+      even numbered page   66 pages, label first, `A VIII.4  MODULES ARTINIENS`
+      odd numbered page    65 pages, title first, `STRUCTURE DES MODULES  A VIII.35`
+
+    No exceptions either way. That is the verso and the recto. The label sits in
+    the outer margin, which is the left hand side of a verso and the right hand
+    side of a recto, and a bound volume puts the even numbers on the verso.
+
+    This used to always write the title first, which was right on the odd pages
+    and wrong on the even ones, and the docstring said so and called it good
+    enough because the only caller parses a label out of the line. It stopped
+    being good enough when §08's training pool started using the same line as
+    the target a model is trained to produce.
 
     The folio is only used when there is nothing else. `running_head` is the
     whole printed line where a volume prints one, number and all: `lie-vii-ix`
@@ -98,6 +115,11 @@ def head_line(page: corpuslib.Page) -> str:
     already in it, and appending the folio again would build a head no page has
     ever carried and then measure readings against it.
     """
+    if page.running_head and page.page_label:
+        number = printed_number(page.page_label)
+        if number is not None and number % 2 == 0:
+            return f"{page.page_label} {page.running_head}"
+        return f"{page.running_head} {page.page_label}"
     parts = [page.running_head, page.page_label]
     line = " ".join(part for part in parts if part).strip()
     return line or page.folio

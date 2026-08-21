@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from local_ocr import corpus as corpuslib
-from local_ocr import evaluate, golden
+from local_ocr import evaluate, golden, pool
 from local_ocr.metrics import conformance
 
 pytestmark = pytest.mark.skipif(
@@ -87,3 +87,40 @@ def test_a_first_line_that_is_not_the_head_is_left_alone(dev):
 def test_the_pages_are_the_tier_they_claim_to_be(dev):
     assert {page.method for page in dev} == {"native"}
     assert {page.book for page in dev} <= set(golden.TIER_B_VOLUMES)
+
+
+def test_the_head_is_ordered_by_the_page_number(dev):
+    """The rule measured in `evaluate.head_line`, checked against the front matter.
+
+    Not the measurement itself, which needed readings of the printed pages to
+    make, but the property that measurement chose: on a page that prints both
+    halves the label leads on an even number and follows on an odd one. Pinned
+    here because the completion in the training pool is this line, so a page
+    that comes out the wrong way round is 2 400 examples teaching a model to
+    put the page reference on the wrong side of the head.
+    """
+    both = [page for page in dev if page.running_head and page.page_label]
+    assert len(both) > 100, "the sample should be mostly pages that print both halves"
+    for page in both:
+        line = evaluate.head_line(page)
+        number = evaluate.printed_number(page.page_label)
+        if number is None:
+            continue
+        if number % 2 == 0:
+            assert line.startswith(page.page_label), page.id
+        else:
+            assert line.endswith(page.page_label), page.id
+
+
+def test_no_held_out_page_is_in_the_training_pool(dev):
+    """§08's rule, on the real manifests and the real corpus.
+
+    `build` asserts this itself on the way out, so this is the same check run
+    against the pages rather than against a fixture, and it is the one that
+    would catch a manifest redrawn under a pool that was built before it.
+    """
+    built = pool.build(require_image=False)
+    got = {one.id for one in built.examples}
+    for name in pool.FORBIDDEN:
+        assert got.isdisjoint(golden.read_manifest(name)), name
+    assert len(got) > 2000, "tier B is 2 800 pages and the pool should be most of it"
