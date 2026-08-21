@@ -239,10 +239,21 @@ def test_the_inversion_count_is_the_worst_page_and_not_the_mean():
     assert card(clean, woven).inversions() == woven.order.inversions
 
 
-def test_coverage_is_blocks_found_over_blocks_wanted_across_the_set():
+def test_coverage_is_characters_found_over_characters_wanted_across_the_set():
+    """Characters and not blocks, so a page of one word headings cannot drag it.
+
+    The reference here has half its blocks in the left column, and reading only
+    that column finds every character of it and none of the other, which is what
+    the two page card adds up to.
+    """
     half = bakeoff.judge(page(), "\n\n".join(LEFT), set())
     whole = bakeoff.judge(page(), READING, set())
-    assert card(half, whole).coverage() == 9 / 12
+    both = card(half, whole)
+    found = half.matched.length + whole.matched.length
+    want = half.content.length + whole.content.length
+    assert both.coverage() == found / want
+    assert whole.matched.length == whole.content.length
+    assert 0.5 < both.coverage() < 1.0
 
 
 def test_the_flag_rates_count_pages_and_not_flags():

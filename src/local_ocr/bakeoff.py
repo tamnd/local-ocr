@@ -26,6 +26,16 @@ by pair; the order question is then answered separately by a Kendall tau over
 where those same pairs sit. The two use one matching function so they cannot
 disagree about which block is which.
 
+A pair is a passage and not a block, because the text layer disagrees with the
+reading about where a block ends as well as about what order the blocks go in.
+It shatters a display heading into one block a word and it fuses a column of
+five paragraphs into one block, both on the same page, so the matching has to
+put several blocks of one side against several of the other and score the
+joined text. `metrics.order._groups` is where that happens and its docstring
+carries the measurement: on 198 real Kvant pages, doing this rather than
+matching block to block moved content CER from 57.3 % to 27.4 % without one
+character of any reading changing.
+
 That leaves the obvious hole, which is that a reader could emit one perfect
 paragraph, drop the rest of the page and score zero error on what it matched. So
 the headline number is not the matched rate. It is `content`, which charges
@@ -194,8 +204,19 @@ class Card:
         return max((p.order.inversions for p in self.pages), default=0)
 
     def coverage(self) -> float:
-        found = sum(p.order.matched for p in self.pages)
-        want = sum(p.order.expected for p in self.pages)
+        """Share of the reference's characters that landed in a passage.
+
+        Characters and not blocks. Blocks was the first version and it reads far
+        worse than the truth on this reference, because the publisher's text
+        layer shatters a letter spaced heading into one block a letter and a
+        page can carry twenty of those against ten paragraphs. On the dev set
+        592 reference blocks went unmatched and they are 1.1 % of the reference
+        by character, so the block number said 74 % of a page was found where
+        the character number says 98.9 %. The character number is the one that
+        answers what a person means by how much of the page did it get.
+        """
+        found = sum(p.matched.length for p in self.pages)
+        want = sum(p.content.length for p in self.pages)
         return found / want if want else 0.0
 
     def flagged(self, which: str) -> float:
@@ -216,7 +237,7 @@ class Card:
             "content_cer": round(self.rate("content"), 6),
             "matched_cer": round(self.rate("matched"), 6),
             "prose_cer": round(self.rate("prose"), 6),
-            "block_coverage": round(self.coverage(), 6),
+            "content_coverage": round(self.coverage(), 6),
             "order_tau": round(self.tau(), 6),
             "worst_page_inversions": self.inversions(),
             "oov_page_rate": round(self.flagged("oov"), 6),
@@ -248,7 +269,7 @@ class Card:
             f"| Content CER | {self.rate('content'):.2%} |",
             f"| Matched block CER | {self.rate('matched'):.2%} |",
             f"| Prose CER | {self.rate('prose'):.2%} |",
-            f"| Block coverage | {self.coverage():.1%} |",
+            f"| Content coverage | {self.coverage():.1%} |",
             f"| Reading order tau | {self.tau():+.3f} |",
             f"| Worst page inversions | {self.inversions()} |",
             f"| Pages with a repeated unknown word | {self.flagged('oov'):.1%} |",
