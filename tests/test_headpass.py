@@ -105,12 +105,13 @@ class TestMissing:
         assert not missing("496\n\nTABLE DES MATIERES\n")
 
     def test_a_head_that_ends_in_a_full_stop_is_still_a_head(self) -> None:
-        """hist prints the stop, and the veto on it cost 36 pages of that volume.
+        """hist prints the stop, and the veto on it cost 56 pages of that volume.
 
         Every one of them was read three times and went dead on a running head
-        the page really carries. 96 first lines across the 4698 raw readings on
-        disk are short, mostly capitals and end in a stop, 93 of them in hist,
-        and a 15 line sample of those held no prose at all.
+        the page really carries. Across the 4809 raw readings on disk there are
+        112 first lines of 90 characters or fewer that end in a stop, and 97 of
+        them read as a head under the rule as it stands now, over 60 distinct
+        pages. The other 15 are mixed case sentences.
         """
         for head in (
             "234  23. HAAR MEASURE. CONVOLUTION.",
