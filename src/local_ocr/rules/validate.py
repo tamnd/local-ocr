@@ -405,12 +405,22 @@ def looks_like_head(line: str) -> bool:
     Rejecting a good page costs a whole read and lands it in the failures
     report; letting a doubtful one through costs a line in the audit, which a
     person reads anyway.
+
+    A terminal full stop used to veto the line, on the reading that a sentence
+    ends in one and a head does not. That holds for the volumes whose heads are
+    a title and a locator and fails for hist, which prints "23. HAAR MEASURE.
+    CONVOLUTION.", "PREFACE." and "TABLE OF CONTENTS." with the stop. It cost 36
+    pages of hist, every one of them dead after three attempts on a head the
+    page really prints. Across the 4698 raw readings on disk there are 96 first
+    lines that are short, mostly capitals and end in a stop, 93 of them in hist,
+    and every one of a 15 line sample is a genuine printed head. The capitals
+    test at the end does the veto's work anyway: a sentence of prose ending in a
+    full stop is mixed case and fails it, which is why the veto only ever fired
+    on heads.
     """
     line = line.strip()
     if len(line) > LONGEST_HEAD:
         return False  # a running head is not a paragraph
-    if line.endswith(".") and not line.endswith("no."):
-        return False  # a sentence, not a head
     letters = upper = 0
     for ch in line:
         if "a" <= ch <= "z":

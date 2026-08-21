@@ -307,7 +307,7 @@
     },
     {
       "name": "rule 4 accepts a head ending in no.",
-      "why": "The one full stop that does not make a line a sentence.",
+      "why": "A full stop in a head is not what makes a line a sentence.",
       "text": "§ 4, no.\n\nLet $E$ be a set and let $R$ be a relation on $E$. We say that $R$ is an\nequivalence relation if it is reflexive, symmetric and transitive. The set of\nequivalence classes is written $E/R$, and the canonical mapping of $E$ onto\n$E/R$ sends each element to the class containing it. Every mapping of $E$ into\na set $F$ which is constant on each class factors uniquely through $E/R$.",
       "expect": {
         "book": "alg-i-iii",
@@ -321,6 +321,46 @@
         "has_head": true
       },
       "problems": []
+    },
+    {
+      "name": "rule 4 accepts a head in capitals that ends in a full stop",
+      "why": "hist prints its heads with the stop, and vetoing those cost 36 pages of that volume.",
+      "text": "234  23. HAAR MEASURE. CONVOLUTION.\n\nLet $E$ be a set and let $R$ be a relation on $E$. We say that $R$ is an\nequivalence relation if it is reflexive, symmetric and transitive. The set of\nequivalence classes is written $E/R$, and the canonical mapping of $E$ onto\n$E/R$ sends each element to the class containing it. Every mapping of $E$ into\na set $F$ which is constant on each class factors uniquely through $E/R$.",
+      "expect": {
+        "book": "hist",
+        "pdf_page": 234,
+        "blank": false,
+        "sparse": false,
+        "grammar": "head-number",
+        "chapter": "",
+        "page": 0,
+        "confidence": "head",
+        "has_head": true
+      },
+      "problems": []
+    },
+    {
+      "name": "rule 4 rejects a sentence that ends in a full stop",
+      "why": "The capitals test is what keeps prose out, and it does the vetoed stop's work.",
+      "text": "The theory of Haar measure is developed in the following section.\n\nLet $E$ be a set and let $R$ be a relation on $E$. We say that $R$ is an\nequivalence relation if it is reflexive, symmetric and transitive. The set of\nequivalence classes is written $E/R$, and the canonical mapping of $E$ onto\n$E/R$ sends each element to the class containing it. Every mapping of $E$ into\na set $F$ which is constant on each class factors uniquely through $E/R$.",
+      "expect": {
+        "book": "hist",
+        "pdf_page": 235,
+        "blank": false,
+        "sparse": false,
+        "grammar": "head-number",
+        "chapter": "",
+        "page": 0,
+        "confidence": "head",
+        "has_head": true
+      },
+      "problems": [
+        {
+          "rule": "head",
+          "detail": "the first line reads as prose, not a running head: \"The theory of Haar measure is developed in the following sec…\"",
+          "line": 1
+        }
+      ]
     },
     {
       "name": "rule 4 rejects a head longer than ninety runes",
