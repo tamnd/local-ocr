@@ -39,8 +39,14 @@ WORD = re.compile(r"[А-Яа-яЁё]+(?:-[А-Яа-яЁё]+)*")
 """A Russian word, hyphenated compounds included.
 
 Hyphens are joined rather than split because the compounds are the interesting
-half: `какой-нибудь` is one entry in any vocabulary and two tokens that are both
-in it, so splitting would let a wrong hyphen through.
+half: splitting `какой-нибудь` into two tokens that are both vocabulary would
+let a wrong hyphen through, and a compound is what a person needs to see to
+judge one.
+
+Joining the token is not the same as looking it up whole. The vocabulary this
+runs against holds no hyphenated form at all, so `carried` falls back to the
+parts. The first version of this did not, and the gate spent three quarters of
+its flags on `из-за` and `что-то`.
 """
 
 SHORTEST = 3
@@ -224,6 +230,35 @@ def prose(body: str) -> str:
     return "".join(r for r, k in zip(runes, keep, strict=True) if k)
 
 
+def carried(word: str, words: set[str]) -> bool:
+    """Whether the vocabulary knows this word, hyphens allowed for.
+
+    A compound the list does not hold is known when the list holds every part of
+    it. The comment above `WORD` used to say the opposite, that a compound is
+    one entry in any vocabulary, and on the vocabulary this actually runs
+    against that was false: `manifests/lexicon.txt` is 1 557 248 forms and not
+    one of them contains a hyphen, because the Go side that builds it splits on
+    the hyphen and this module does not.
+
+    So every compound on every page was unknown by construction, and any that
+    turned up twice was flagged. On kvant-dev that was 43 of the 57 flags and it
+    took the gate's page rate from 20.5 % to 6.1 %: `из-за`, `что-то`,
+    `по-прежнему`, `санкт-петербург`, `бета-распада`. Ordinary Russian, every
+    one of them, and enough of it to bury the real findings.
+
+    Parts and not the whole is also the stricter reading, not the looser one. A
+    misread inside a compound leaves a part the list does not hold, so
+    `кастрюле-скороварке` survives if `скороварке` is not vocabulary, and only a
+    compound whose every part is a real word is let through.
+    """
+    if word in words:
+        return True
+    if "-" not in word:
+        return False
+    parts = [part for part in word.split("-") if part]
+    return bool(parts) and all(part in words for part in parts)
+
+
 def oov(body: str, words: set[str], *, repeated: int = REPEATED) -> list[Flag]:
     """Words the vocabulary does not carry, that the page uses more than once.
 
@@ -236,7 +271,7 @@ def oov(body: str, words: set[str], *, repeated: int = REPEATED) -> list[Flag]:
     counts: Counter[str] = Counter()
     for raw in WORD.findall(prose(body)):
         word = fold(raw)
-        if len(word.replace("-", "")) >= SHORTEST and word not in words:
+        if len(word.replace("-", "")) >= SHORTEST and not carried(word, words):
             counts[word] += 1
     flags = [Flag("oov", word, n) for word, n in counts.items() if n >= repeated]
     return sorted(flags, key=lambda f: (-f.count, f.detail))
