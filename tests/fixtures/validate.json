@@ -324,7 +324,7 @@
     },
     {
       "name": "rule 4 accepts a head in capitals that ends in a full stop",
-      "why": "hist prints its heads with the stop, and vetoing those cost 36 pages of that volume.",
+      "why": "hist prints its heads with the stop, and vetoing those cost 56 pages of that volume.",
       "text": "234  23. HAAR MEASURE. CONVOLUTION.\n\nLet $E$ be a set and let $R$ be a relation on $E$. We say that $R$ is an\nequivalence relation if it is reflexive, symmetric and transitive. The set of\nequivalence classes is written $E/R$, and the canonical mapping of $E$ onto\n$E/R$ sends each element to the class containing it. Every mapping of $E$ into\na set $F$ which is constant on each class factors uniquely through $E/R$.",
       "expect": {
         "book": "hist",
