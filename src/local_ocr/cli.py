@@ -448,6 +448,57 @@ def golden_cmd(argv: Sequence[str]) -> int:
     return 0
 
 
+def kvant_cmd(argv: Sequence[str]) -> int:
+    """`kvant draw`, `kvant check` and `kvant show`, the Russian tier B set.
+
+    A separate command from `golden` and not a flag on it, because it reads a
+    different corpus out of a different environment variable and a different
+    scan cache, and a flag would make it possible to point one of the two at
+    the other's tree and get a set of nothing back with no complaint.
+    """
+    from local_ocr import kvant
+
+    parser = argparse.ArgumentParser(prog=f"{PROG} kvant")
+    parser.add_argument("action", choices=["draw", "check", "show"])
+    parser.add_argument("--corpus", type=Path, default=None)
+    parser.add_argument("--cache", type=Path, default=None)
+    parser.add_argument("--name", default="", help="for show, which set to list")
+    args = parser.parse_args(list(argv))
+
+    if args.action == "show":
+        if not args.name:
+            for entry in kvant.SETS.values():
+                held = ", held out" if entry.held_out else ""
+                print(f"{entry.name}: tier B, {entry.size} pages{held}")
+            return 0
+        for page_id in kvant.read_manifest(args.name):
+            print(page_id)
+        return 0
+
+    try:
+        corpus = kvant.root(args.corpus)
+        store = kvant.cache(args.cache)
+    except kvant.NoKvant as err:
+        print(f"{PROG}: {err}", file=sys.stderr)
+        return 2
+
+    if args.action == "check":
+        for drift in kvant.check(corpus, store):
+            print(drift.line())
+        return 0
+
+    drawn = kvant.draw(corpus, store)
+    for path in kvant.write_manifests(drawn):
+        print(path)
+    # The gate's yield, printed every time rather than only when it is not
+    # zero. A line saying nothing was rejected is the evidence that the check
+    # ran; silence is indistinguishable from the check having been removed.
+    print(f"gate rejected {len(drawn.rejected)} native pages")
+    for page_id, reason in sorted(drawn.rejected.items())[:20]:
+        print(f"  {page_id}: {reason}")
+    return 0
+
+
 def _pages_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"{PROG} pages",
@@ -645,6 +696,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return evaluate_cmd(rest)
     if command == "golden":
         return golden_cmd(rest)
+    if command == "kvant":
+        return kvant_cmd(rest)
     if command == "serve":
         return serve_cmd(rest)
     if command == "pages":
@@ -663,6 +716,7 @@ def _usage() -> str:
         "  ocr-batch <in> <out>   read a directory of page images into Markdown\n"
         "  eval --set S --readings D   judge readings against a golden set\n"
         "  golden draw|check|show      the four golden sets and their drift\n"
+        "  kvant draw|check|show       the Russian tier B set and its drift\n"
         "  serve <model>          start a shortlisted reader under vLLM\n"
         "  pages --set S          rasterise a golden set into the corpus images tree\n"
         "  mine <dir>             training pairs out of the readers' disagreements\n"
@@ -678,6 +732,10 @@ def _usage() -> str:
         "\n"
         "eval needs a checkout of tamnd/bourbaki, found through BOURBAKI_CORPUS or\n"
         "given with --corpus. Nothing in this repository copies pages out of it.\n"
+        "\n"
+        "kvant needs a checkout of tamnd/kvant through KVANT_CORPUS and its scan\n"
+        "cache through KVANT_CACHE. The reference there is the publisher's own text\n"
+        "layer, so a number off it is a distance to the file and not to the paper.\n"
     )
 
 
