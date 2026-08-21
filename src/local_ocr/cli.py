@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import os
 import shlex
+import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -751,6 +752,213 @@ def serve_cmd(argv: Sequence[str], exec_: Callable[[str, list[str]], None] | Non
     return 1  # unreachable when execvp succeeds, which is the point of it
 
 
+def _bench_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=f"{PROG} bench",
+        description="The six serving benchmarks of section 01, in accepted pages an hour.",
+    )
+    parser.add_argument("--plan", action="store_true", help="print the arms and run nothing")
+    parser.add_argument("--set", dest="set_name", default="golden-dev", help="the set to read")
+    parser.add_argument(
+        "--purpose", default="milestone", choices=[p.value for p in Purpose], help="why"
+    )
+    parser.add_argument("--corpus", type=Path, default=None, help="a bourbaki checkout")
+    parser.add_argument(
+        "--images",
+        type=str,
+        default=None,
+        help="where the rendered pages are, with {dpi} substituted per arm",
+    )
+    parser.add_argument("--out", type=Path, default=None, help="a directory, one subtree per arm")
+    parser.add_argument("--prompt-file", type=Path, default=None, help="the prompt to send")
+    parser.add_argument("--base-url", default=None, help="where the reader answers")
+    parser.add_argument(
+        "--serve",
+        default=None,
+        help="shell command that brings one arm up, with the arm in its environment",
+    )
+    parser.add_argument(
+        "--power",
+        default=None,
+        help="shell command printing the board's instantaneous watts, sampled during a run",
+    )
+    parser.add_argument("--only", default=None, help="a comma separated subset of the arm names")
+    parser.add_argument("--ready-timeout", type=float, default=900.0, help="seconds to wait")
+    parser.add_argument("--json", dest="json_path", type=Path, default=None)
+    parser.add_argument("--markdown", dest="markdown_path", type=Path, default=None)
+    return parser
+
+
+def bench_cmd(
+    argv: Sequence[str],
+    *,
+    stage: Callable[[object], None] | None = None,
+    read: Callable[[object], tuple[int, int]] | None = None,
+    accept: Callable[[object], int] | None = None,
+) -> int:
+    """Measure the six, or say what measuring them would do.
+
+    The three callables are here so the wiring can be exercised without a card.
+    A real run leaves them None and gets a shell that stages the arm, a
+    subprocess that reads the pages through this same `ocr-batch`, and the
+    golden judging.
+
+    The reading goes through `ocr-batch` as a subprocess rather than through the
+    reader objects directly, and that is not laziness. The fleet drives this
+    machine through that command, and a benchmark that measured any other path
+    would produce a number about the harness.
+    """
+    from local_ocr import bench
+
+    args = _bench_parser().parse_args(list(argv))
+
+    chosen = list(bench.PLAN)
+    if args.only:
+        wanted = {name.strip() for name in args.only.split(",") if name.strip()}
+        known = {one.name for one in bench.PLAN}
+        astray = sorted(wanted - known)
+        if astray:
+            print(
+                f"{PROG}: no arm {astray[0]!r}, the plan has {', '.join(sorted(known))}",
+                file=sys.stderr,
+            )
+            return 2
+        chosen = [one for one in bench.PLAN if one.name in wanted]
+
+    if args.plan:
+        print(bench.plan_lines(chosen))
+        return 0
+
+    live = stage is None and read is None and accept is None
+    if live:
+        missing = [
+            flag
+            for flag, value in (
+                ("--images", args.images),
+                ("--out", args.out),
+                ("--prompt-file", args.prompt_file),
+                ("--base-url", args.base_url),
+                ("--serve", args.serve),
+            )
+            if value is None
+        ]
+        if missing:
+            print(
+                f"{PROG}: bench needs {', '.join(missing)}, or --plan to print the arms",
+                file=sys.stderr,
+            )
+            return 2
+        stage, read, accept = _bench_live(args, bench)
+
+    assert stage is not None and read is not None and accept is not None
+    sampler = None
+    if args.power:
+        sampler = bench.nvidia_smi(
+            lambda _cmd: (
+                subprocess.run(
+                    args.power, shell=True, capture_output=True, text=True, check=True
+                ).stdout
+            )
+        )
+
+    def power(_variant: object) -> object:
+        """A fresh meter per arm, or none when the caller gave no way to read one.
+
+        Fresh, because a meter carries the samples of the run it watched and
+        reusing one would charge the second arm with the first arm's energy.
+        """
+        return None if sampler is None else bench.Power(sampler)
+
+    got = bench.run(
+        chosen,
+        stage=stage,
+        read=read,
+        accept=accept,
+        pages=0,
+        power=power,  # type: ignore[arg-type]
+    )
+    board = bench.Board(model=chosen[0].model if chosen else "", set_name=args.set_name)
+    board.measured = got
+    bench.write(board, json_path=args.json_path, markdown_path=args.markdown_path)
+    print(board.to_markdown())
+    return 0 if any(not m.skipped for m in got) else 1
+
+
+def _bench_live(args: argparse.Namespace, bench: object) -> tuple[object, object, object]:
+    """The three real callables: bring an arm up, read the pages, judge them.
+
+    Split out so that `bench_cmd` reads as argument handling and this reads as
+    the part that touches the machine.
+    """
+    from local_ocr import evaluate as evaluating
+
+    images_for = lambda v: Path(args.images.format(dpi=v.dpi))  # noqa: E731
+    out_for = lambda v: args.out / v.name  # noqa: E731
+
+    stage_shell = bench.shell_stage(args.serve)  # type: ignore[attr-defined]
+
+    def stage(variant: object) -> None:
+        stage_shell(variant)
+        if args.base_url:
+            bench.wait_ready(  # type: ignore[attr-defined]
+                lambda: _answers(args.base_url), timeout=args.ready_timeout
+            )
+
+    def read(variant: object) -> tuple[int, int]:
+        source = images_for(variant)
+        target = out_for(variant)
+        target.mkdir(parents=True, exist_ok=True)
+        given = len([p for p in source.rglob("*") if p.suffix.lower() in {".png", ".jpg"}])
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "local_ocr.cli",
+                "ocr-batch",
+                str(source),
+                str(target),
+                "--backend",
+                "vllm",
+                "--model",
+                variant.model,  # type: ignore[attr-defined]
+                "--base-url",
+                args.base_url,
+                "-j",
+                str(variant.jobs),  # type: ignore[attr-defined]
+                "--ext",
+                "png",
+                "--recursive",
+                "--timeout",
+                "900",
+                "--prompt-file",
+                str(args.prompt_file),
+            ],
+            check=False,
+        )
+        return given, len(list(target.rglob("*.md")))
+
+    def accept(variant: object) -> int:
+        report = evaluating.evaluate(
+            args.set_name,
+            out_for(variant),
+            purpose=Purpose(args.purpose),
+            model=variant.model,  # type: ignore[attr-defined]
+            corpus=args.corpus,
+        )
+        return sum(1 for r in report.results if r.accepted)
+
+    return stage, read, accept
+
+
+def _answers(base_url: str) -> bool:
+    import httpx
+
+    try:
+        return httpx.get(f"{base_url.rstrip('/')}/models", timeout=5.0).status_code == 200
+    except Exception:
+        return False
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in {"-V", "--version"}:
@@ -774,6 +982,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return pages_cmd(rest)
     if command == "mine":
         return mine_cmd(rest)
+    if command == "bench":
+        return bench_cmd(rest)
     print(f"{PROG}: no command {command!r}\n\n{_usage()}", file=sys.stderr)
     return 2
 
@@ -790,6 +1000,7 @@ def _usage() -> str:
         "  serve <model>          start a shortlisted reader under vLLM\n"
         "  pages --set S          rasterise a golden set into the corpus images tree\n"
         "  mine <dir>             training pairs out of the readers' disagreements\n"
+        "  bench --plan           the six serving benchmarks of section 01\n"
         "\n"
         "A second reader is switched on with LOCAL_OCR_REFEREE, naming an entry in\n"
         "models.toml. It reads every page after the primary does, the two readings\n"
@@ -809,6 +1020,12 @@ def _usage() -> str:
         "kvant pages wants --out as well, a directory in neither tree, because the\n"
         "Kvant checkout has nowhere that images are ignored the way the Bourbaki\n"
         "one has images/.\n"
+        "\n"
+        "bench reports accepted pages an hour and not tokens a second, because a\n"
+        "truncated page and a whole one weigh the same in tokens and a refusal\n"
+        "weighs nothing, and both of those get worse in the direction a sweep\n"
+        "pushes. Every arm takes the whole card, so --plan prints what a run would\n"
+        "do without doing any of it.\n"
         "\n"
         "kvant eval is the Russian bake off and is not local-ocr eval. It matches\n"
         "blocks before it scores them, because the reference there is the\n"
