@@ -402,6 +402,82 @@ class TestMeasurement:
         assert "overruled" in line
 
 
+class Priced(Stub):
+    """A reader that reports what the server charged, one page at a time."""
+
+    def __init__(self, *answers, prompt=1400, completion=700):
+        super().__init__(*answers)
+        self.price = (prompt, completion)
+        self.collected: list[str] = []
+
+    def usage(self, image):
+        self.collected.append(image.name)
+        return self.price
+
+
+class TestTokens:
+    """The sidecar field that read zero on every page of the M6 run.
+
+    122 pages were read with both readers and adjudicated up to three times each,
+    and not one of the sidecars could say what any of it cost, because `read`
+    hands back a string and the counts were thrown away with the response. They
+    are collected on the side now, and a zero here means nobody counted rather
+    than nothing was spent.
+    """
+
+    def test_the_first_reader_is_charged_to_the_sidecar(self, tmp_path):
+        page = page_image(tmp_path)
+        out = asyncio.run(SecondPass(first=Priced(PAGE)).look(page, "read this"))
+        assert out.record.first.prompt_tokens == 1400
+        assert out.record.first.completion_tokens == 700
+
+    def test_the_referee_is_charged_separately(self, tmp_path):
+        page = page_image(tmp_path)
+        pipe = SecondPass(
+            first=Priced(PAGE),
+            second=Priced(PAGE, prompt=900, completion=640),
+        )
+        out = asyncio.run(pipe.look(page, "read this"))
+        assert out.record.first.prompt_tokens == 1400
+        assert out.record.second.prompt_tokens == 900
+        assert out.record.second.completion_tokens == 640
+
+    def test_a_reader_that_cannot_count_writes_zeros_and_keeps_working(self, tmp_path):
+        # codex is a subprocess against a subscription and reports nothing. A
+        # sidecar of zeros is what it wrote before this existed, and breaking it
+        # for a token count would be a poor trade.
+        page = page_image(tmp_path)
+        out = asyncio.run(SecondPass(first=Stub(PAGE)).look(page, "read this"))
+        assert out.record.first.prompt_tokens == 0
+        assert out.record.first.completion_tokens == 0
+
+    def test_a_reader_whose_usage_raises_does_not_lose_the_page(self, tmp_path):
+        class Angry(Stub):
+            def usage(self, image):
+                raise RuntimeError("no")
+
+        page = page_image(tmp_path)
+        out = asyncio.run(SecondPass(first=Angry(PAGE)).look(page, "read this"))
+        assert out.text == PAGE
+        assert out.record.first.prompt_tokens == 0
+
+    def test_a_reader_that_answers_something_else_is_not_believed(self, tmp_path):
+        class Odd(Stub):
+            def usage(self, image):
+                return 4096
+
+        page = page_image(tmp_path)
+        out = asyncio.run(SecondPass(first=Odd(PAGE)).look(page, "read this"))
+        assert out.record.first.prompt_tokens == 0
+
+    def test_a_refused_referee_is_not_charged(self, tmp_path):
+        page = page_image(tmp_path)
+        pipe = SecondPass(first=Priced(PAGE), second=Stub(refuse=True))
+        out = asyncio.run(pipe.look(page, "read this"))
+        assert out.record.second.refused
+        assert out.record.second.prompt_tokens == 0
+
+
 class TestCaught:
     def test_a_disagreement_on_a_page_that_passed_is_a_catch(self):
         record = Record(referee_ran=True, agreed=False, gates={"head": "ok", "math": "ok"})

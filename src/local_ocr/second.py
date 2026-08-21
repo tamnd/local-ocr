@@ -299,12 +299,15 @@ class SecondPass:
 
         started = time.monotonic()
         text = await self.first.read(image, prompt)
+        prompt_tokens, completion_tokens = _spent(self.first, image)
         record.first = Read(
             reader=self.names[0],
             model=self.models[0],
             revision=self.revisions[0],
             prompt_sha256=text_digest(prompt),
             seconds=round(time.monotonic() - started, 3),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
             text_sha256=text_digest(text),
         )
         record.gates = _gates(text)
@@ -334,12 +337,15 @@ class SecondPass:
             )
             return Outcome(text, record)
         record.referee_ran = True
+        prompt_tokens, completion_tokens = _spent(self.second, image)
         record.second = Read(
             reader=self.names[1],
             model=self.models[1],
             revision=self.revisions[1],
             prompt_sha256=text_digest(asked),
             seconds=round(time.monotonic() - started, 3),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
             text_sha256=text_digest(other),
         )
 
@@ -477,6 +483,30 @@ def _gates(text: str) -> dict[str, str]:
     if not problems:
         return {"rules": "ok"}
     return {str(problem.rule): problem.detail for problem in problems}
+
+
+def _spent(reader: object, image: Path) -> tuple[int, int]:
+    """What the server charged for a page, if the reader is one that counts.
+
+    Optional on purpose. A reader is anything with a `read`, and requiring a
+    `usage` of all of them would break the two that cannot answer it: codex is a
+    subprocess against a subscription and reports nothing, and a head pass
+    wrapper reads a strip rather than a page. Both keep working and both write
+    zeros, which is the same thing the sidecar said before this existed.
+
+    A zero here means nobody counted. It does not mean nothing was spent, and
+    anything reading these files for a cost has to treat it that way.
+    """
+    ask = getattr(reader, "usage", None)
+    if not callable(ask):
+        return 0, 0
+    try:
+        got = ask(image)
+    except Exception:
+        return 0, 0
+    if not isinstance(got, tuple) or len(got) != 2:
+        return 0, 0
+    return int(got[0]), int(got[1])
 
 
 def _measure(record: Record, image: Path) -> None:

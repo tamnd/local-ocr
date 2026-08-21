@@ -36,15 +36,13 @@ def reader_answering(handler, **kwargs) -> OpenAIVisionReader:
     return reader
 
 
-def answer(text: str, finish: str = "stop") -> httpx.Response:
-    return httpx.Response(
-        200,
-        json={
-            "choices": [
-                {"message": {"role": "assistant", "content": text}, "finish_reason": finish}
-            ]
-        },
-    )
+def answer(text: str, finish: str = "stop", usage: dict | None = None) -> httpx.Response:
+    body: dict = {
+        "choices": [{"message": {"role": "assistant", "content": text}, "finish_reason": finish}]
+    }
+    if usage is not None:
+        body["usage"] = usage
+    return httpx.Response(200, json=body)
 
 
 class TestWhy:
@@ -158,3 +156,69 @@ class TestRead:
         with pytest.raises(Refused) as caught:
             asyncio.run(reader.read(image, "Read this page."))
         assert "sorry" in str(caught.value).lower()
+
+
+class TestUsage:
+    """What the server charged, which the sidecar carried as zero for a whole run.
+
+    The M6 run wrote 122 sidecars and every one of them said prompt_tokens 0 and
+    completion_tokens 0, because the counts were in the response and `read`
+    returns a string. They are collected on the side now, and the thing that
+    matters most here is that a page nobody counted is told apart from a page
+    that cost nothing.
+    """
+
+    def test_the_counts_the_server_sent_come_back_once(self, image: Path) -> None:
+        reader = reader_answering(
+            lambda request: answer("read", usage={"prompt_tokens": 1512, "completion_tokens": 803})
+        )
+        asyncio.run(reader.read(image, "Read this page."))
+        assert reader.usage(image) == (1512, 803)
+        # Once, because a second page read into the same sidecar would otherwise
+        # inherit the counts of the page before it.
+        assert reader.usage(image) is None
+
+    def test_a_server_that_does_not_count_says_nothing_rather_than_zero(self, image: Path) -> None:
+        reader = reader_answering(lambda request: answer("read"))
+        asyncio.run(reader.read(image, "Read this page."))
+        assert reader.usage(image) is None
+
+    def test_a_usage_block_that_is_not_numbers_is_ignored(self, image: Path) -> None:
+        reader = reader_answering(lambda request: answer("read", usage={"prompt_tokens": "1512"}))
+        asyncio.run(reader.read(image, "Read this page."))
+        assert reader.usage(image) is None
+
+    def test_a_refused_page_files_nothing(self, image: Path) -> None:
+        reader = reader_answering(
+            lambda request: answer(
+                "half a page", finish="length", usage={"prompt_tokens": 9, "completion_tokens": 9}
+            )
+        )
+        with pytest.raises(Refused):
+            asyncio.run(reader.read(image, "Read this page."))
+        assert reader.usage(image) is None
+
+    def test_two_pages_are_counted_apart(self, image: Path, tmp_path: Path) -> None:
+        other = tmp_path / "0043.png"
+        other.write_bytes(PAGE)
+        counts = iter([(100, 10), (200, 20)])
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            prompt, completion = next(counts)
+            return answer("read", usage={"prompt_tokens": prompt, "completion_tokens": completion})
+
+        reader = reader_answering(handler)
+        asyncio.run(reader.read(image, "Read this page."))
+        asyncio.run(reader.read(other, "Read this page."))
+        assert reader.usage(other) == (200, 20)
+        assert reader.usage(image) == (100, 10)
+
+    def test_a_caller_that_never_collects_does_not_grow_without_bound(self, tmp_path: Path) -> None:
+        reader = reader_answering(
+            lambda request: answer("read", usage={"prompt_tokens": 1, "completion_tokens": 1})
+        )
+        for n in range(600):
+            page = tmp_path / f"{n:04d}.png"
+            page.write_bytes(PAGE)
+            asyncio.run(reader.read(page, "Read this page."))
+        assert len(reader._usage) <= 512

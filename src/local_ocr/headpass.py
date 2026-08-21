@@ -136,6 +136,13 @@ class HeadPass:
     prompt: str = PROMPT
     asked: int = field(default=0, init=False)
     fixed: int = field(default=0, init=False)
+    _strip: dict[Path, tuple[int, int]] = field(default_factory=dict, init=False, repr=False)
+    """What the second look cost, kept under the page it was taken for.
+
+    The strip is written to a temporary directory that is gone by the time
+    anybody asks, so its counts have to be moved to the page's key here or they
+    are lost. A page read on 90 of 122 pages is not a rounding error.
+    """
 
     async def read(self, image: Path, prompt: str) -> str:
         text = await self.inner.read(image, prompt)
@@ -146,6 +153,7 @@ class HeadPass:
             strip = band(image, Path(scratch) / "head.png", self.fraction)
             try:
                 answer = await self.inner.read(strip, self.prompt)
+                self._keep(image, strip)
             except Refused:
                 # The page itself was read. A failed second look leaves a page
                 # without a head, which the acceptance rules will reject and
@@ -157,3 +165,34 @@ class HeadPass:
             return text
         self.fixed += 1
         return f"{head}\n\n{text.lstrip()}"
+
+    def _keep(self, image: Path, strip: Path) -> None:
+        got = self._ask(strip)
+        if got is not None:
+            self._strip[image] = got
+
+    def _ask(self, image: Path) -> tuple[int, int] | None:
+        ask = getattr(self.inner, "usage", None)
+        if not callable(ask):
+            return None
+        try:
+            got = ask(image)
+        except Exception:
+            return None
+        return got if isinstance(got, tuple) and len(got) == 2 else None
+
+    def usage(self, image: Path) -> tuple[int, int] | None:
+        """The page, plus the strip when a second look was taken for it.
+
+        One number for what reading this page cost, because from outside this
+        wrapper reading the page is one thing. Splitting the head pass out would
+        need its own field in the sidecar and nobody has asked a question that
+        wants it separated.
+        """
+        page = self._ask(image)
+        strip = self._strip.pop(image, None)
+        if page is None:
+            return strip
+        if strip is None:
+            return page
+        return page[0] + strip[0], page[1] + strip[1]
