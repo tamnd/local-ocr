@@ -296,6 +296,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
+    { name = "pillow" },
 ]
 
 [package.optional-dependencies]
@@ -317,6 +318,7 @@ dev = [
 requires-dist = [
     { name = "httpx", specifier = ">=0.28" },
     { name = "matplotlib", marker = "extra == 'eval'", specifier = ">=3.9" },
+    { name = "pillow", specifier = ">=11" },
     { name = "pillow", marker = "extra == 'eval'", specifier = ">=11" },
     { name = "rapidfuzz", marker = "extra == 'eval'", specifier = ">=3.10" },
 ]

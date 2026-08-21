@@ -11,6 +11,12 @@ requires-python = ">=3.12"
 # laptop with no CUDA and the evaluation code can be edited and tested there.
 dependencies = [
     "httpx>=0.28",
+    # Pillow, for one crop. The head pass sends the top strip of a page back to
+    # the reader to recover the running head, and the strip has to be cut from
+    # the image the fleet sent rather than rendered again. It is a small pure
+    # wheel and it does not drag CUDA in behind it, which is the line that
+    # matters for what lives in this list.
+    "pillow>=11",
 ]
 
 [project.optional-dependencies]

@@ -33,27 +33,12 @@ WorkingDirectory=/home/gopher/local-ocr
 ExecStart=/home/gopher/local-ocr/.venv/bin/local-ocr serve %i \
   --vllm /home/gopher/local-ocr/.venv/bin/vllm
 
-# WSL puts the driver's user mode libraries here and nowhere a loader would look
-# by default. Without this line torch finds no CUDA device and vLLM exits with a
-# message about no GPU, on a machine with a 4090 in it.
-Environment=LD_LIBRARY_PATH=/usr/lib/wsl/lib
-Environment=HF_HOME=/home/gopher/.cache/huggingface
-
-# vLLM turns pinned host memory off on WSL by default, because for years it was
-# not dependable there. Its V2 GPU model runner needs a unified virtual address
-# view of a pinned buffer, so with the default the engine dies during startup
-# with "UVA is not available" and the machine never serves a page.
-#
-# The kernel here is 6.18, far past the 4.19.121 that vLLM gates the support on,
-# and pinning was checked by hand before this line was written: a pinned tensor
-# reports is_pinned, copies to the card, and takes an accelerator view. Turned
-# on rather than routed around, because the alternative is the older runner.
-Environment=VLLM_WSL2_ENABLE_PIN_MEMORY=1
-
-# The weights are already downloaded and pinned by revision. Offline means a
-# hub that is slow, rate limiting or simply moved cannot turn a restart into a
-# thirty minute wait or, worse, a quiet download of different weights.
-Environment=HF_HUB_OFFLINE=1
+# The driver library path, the hub cache, the WSL pinned memory switch and the
+# offline flag, in a file a benchmark script can source as well. They were four
+# Environment lines here, and then the first server started by hand outside
+# systemd died on startup for want of one of them. The reasons are written next
+# to each setting in that file.
+EnvironmentFile=/home/gopher/local-ocr/deploy/reader.env
 
 # vLLM shuts down cleanly on SIGINT and is noisy about SIGTERM. Long enough to
 # let it finish the page it is on and free the card, short enough that a hung

@@ -243,6 +243,18 @@ async def run(
             async with counted:
                 summary.skipped += 1
             return
+        if image.stat().st_size == 0:
+            # An empty input is a broken input, and sending it costs a lane, a
+            # round trip and a confusing answer. Fifty pages once came back as
+            # 400 "cannot identify image file", which read like a broken server
+            # and was in fact fifty zero byte files left by a copy that had been
+            # interrupted. Say which it is, here, before the model is involved.
+            reason = "refused: the page image is empty"
+            write_refusal(answer, reason)
+            async with counted:
+                summary.refused.append(image.name)
+            log(f"{image.name}: {reason}")
+            return
         async with lanes:
             await gate.wait()
             started = time.monotonic()

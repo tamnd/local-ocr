@@ -364,7 +364,7 @@ def _check_head(head: str, expect: Expect) -> Problem | None:
     # locator, or a bare number. A line of prose is none of those.
     if parse_section_locator(head) is not None:
         return None
-    if _looks_like_head(head):
+    if looks_like_head(head):
         return None
     return Problem(
         Rule.HEAD,
@@ -373,7 +373,7 @@ def _check_head(head: str, expect: Expect) -> Problem | None:
     )
 
 
-def _looks_like_head(line: str) -> bool:
+def looks_like_head(line: str) -> bool:
     """Deliberately loose.
 
     Rejecting a good page costs a whole read and lands it in the failures
