@@ -1,0 +1,1016 @@
+{
+  "set": "kvant-rotated",
+  "ratio": 2.0,
+  "widest": 18.0,
+  "shortest": 5,
+  "pages": {
+    "kvant_2007_1/0029": [
+      {
+        "issue": "kvant_2007_1",
+        "pdf_page": 27,
+        "text": "Иллюстрация",
+        "width": 8.92,
+        "height": 55.14
+      },
+      {
+        "issue": "kvant_2007_1",
+        "pdf_page": 27,
+        "text": "В.Иванюка",
+        "width": 8.92,
+        "height": 43.41
+      }
+    ],
+    "kvant_2007_2/0023": [
+      {
+        "issue": "kvant_2007_2",
+        "pdf_page": 21,
+        "text": "Иллюстрация",
+        "width": 8.92,
+        "height": 54.55
+      },
+      {
+        "issue": "kvant_2007_2",
+        "pdf_page": 21,
+        "text": "Д.Гришуковой",
+        "width": 8.92,
+        "height": 57.94
+      }
+    ],
+    "kvant_2007_3/0030": [
+      {
+        "issue": "kvant_2007_3",
+        "pdf_page": 28,
+        "text": "Иллюстрация",
+        "width": 8.92,
+        "height": 54.55
+      },
+      {
+        "issue": "kvant_2007_3",
+        "pdf_page": 28,
+        "text": "Д.Гришуковой",
+        "width": 8.92,
+        "height": 57.94
+      }
+    ],
+    "kvant_2007_3/0031": [
+      {
+        "issue": "kvant_2007_3",
+        "pdf_page": 29,
+        "text": "Иллюстрация",
+        "width": 8.92,
+        "height": 55.14
+      },
+      {
+        "issue": "kvant_2007_3",
+        "pdf_page": 29,
+        "text": "В.Иванюка",
+        "width": 8.92,
+        "height": 43.41
+      }
+    ],
+    "kvant_2007_4/0010": [
+      {
+        "issue": "kvant_2007_4",
+        "pdf_page": 8,
+        "text": "Иллюстрация",
+        "width": 9.09,
+        "height": 55.11
+      },
+      {
+        "issue": "kvant_2007_4",
+        "pdf_page": 8,
+        "text": "В.Иванюка",
+        "width": 9.09,
+        "height": 43.39
+      }
+    ],
+    "kvant_2007_4/0028": [
+      {
+        "issue": "kvant_2007_4",
+        "pdf_page": 26,
+        "text": "Иллюстрация",
+        "width": 9.75,
+        "height": 54.55
+      },
+      {
+        "issue": "kvant_2007_4",
+        "pdf_page": 26,
+        "text": "Д.Гришуковой",
+        "width": 9.75,
+        "height": 57.94
+      }
+    ],
+    "kvant_2007_5/0031": [
+      {
+        "issue": "kvant_2007_5",
+        "pdf_page": 29,
+        "text": "Иллюстрация",
+        "width": 9.09,
+        "height": 54.55
+      },
+      {
+        "issue": "kvant_2007_5",
+        "pdf_page": 29,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 57.94
+      }
+    ],
+    "kvant_2007_6/0026": [
+      {
+        "issue": "kvant_2007_6",
+        "pdf_page": 24,
+        "text": "Иллюстрация",
+        "width": 9.09,
+        "height": 54.54
+      },
+      {
+        "issue": "kvant_2007_6",
+        "pdf_page": 24,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 57.96
+      }
+    ],
+    "kvant_2007_6/0028": [
+      {
+        "issue": "kvant_2007_6",
+        "pdf_page": 26,
+        "text": "Иллюстрация",
+        "width": 9.09,
+        "height": 55.13
+      },
+      {
+        "issue": "kvant_2007_6",
+        "pdf_page": 26,
+        "text": "В.Иванюка",
+        "width": 9.09,
+        "height": 43.4
+      }
+    ],
+    "kvant_2008_1/0027": [
+      {
+        "issue": "kvant_2008_1",
+        "pdf_page": 27,
+        "text": "Иллюстрация",
+        "width": 9.09,
+        "height": 54.55
+      },
+      {
+        "issue": "kvant_2008_1",
+        "pdf_page": 27,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 57.94
+      }
+    ],
+    "kvant_2008_1/0029": [
+      {
+        "issue": "kvant_2008_1",
+        "pdf_page": 29,
+        "text": "Иллюстрация",
+        "width": 9.09,
+        "height": 55.14
+      },
+      {
+        "issue": "kvant_2008_1",
+        "pdf_page": 29,
+        "text": "В.Иванюка",
+        "width": 9.09,
+        "height": 43.41
+      }
+    ],
+    "kvant_2008_2/0009": [
+      {
+        "issue": "kvant_2008_2",
+        "pdf_page": 9,
+        "text": "Иллюстрация",
+        "width": 9.09,
+        "height": 55.16
+      },
+      {
+        "issue": "kvant_2008_2",
+        "pdf_page": 9,
+        "text": "В.Власова",
+        "width": 9.09,
+        "height": 39.98
+      }
+    ],
+    "kvant_2008_2/0025": [
+      {
+        "issue": "kvant_2008_2",
+        "pdf_page": 25,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2008_2",
+        "pdf_page": 25,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2008_3/0033": [
+      {
+        "issue": "kvant_2008_3",
+        "pdf_page": 33,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2008_3",
+        "pdf_page": 33,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2008_4/0028": [
+      {
+        "issue": "kvant_2008_4",
+        "pdf_page": 28,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2008_4",
+        "pdf_page": 28,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2008_4/0030": [
+      {
+        "issue": "kvant_2008_4",
+        "pdf_page": 30,
+        "text": "Иллюстрация",
+        "width": 9.09,
+        "height": 55.14
+      },
+      {
+        "issue": "kvant_2008_4",
+        "pdf_page": 30,
+        "text": "В.Иванюка",
+        "width": 9.09,
+        "height": 43.41
+      }
+    ],
+    "kvant_2008_5/0030": [
+      {
+        "issue": "kvant_2008_5",
+        "pdf_page": 30,
+        "text": "Иллюстрации",
+        "width": 9.25,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2008_5",
+        "pdf_page": 30,
+        "text": "Д.Гришуковой",
+        "width": 9.25,
+        "height": 58.57
+      }
+    ],
+    "kvant_2008_6/0010": [
+      {
+        "issue": "kvant_2008_6",
+        "pdf_page": 10,
+        "text": "Иллюстрация",
+        "width": 9.09,
+        "height": 55.1
+      },
+      {
+        "issue": "kvant_2008_6",
+        "pdf_page": 10,
+        "text": "М.Сумниной",
+        "width": 9.09,
+        "height": 52.49
+      }
+    ],
+    "kvant_2009_1/0036": [
+      {
+        "issue": "kvant_2009_1",
+        "pdf_page": 36,
+        "text": "Иллюстрации",
+        "width": 9.75,
+        "height": 55.98
+      },
+      {
+        "issue": "kvant_2009_1",
+        "pdf_page": 36,
+        "text": "Д.Гришуковой",
+        "width": 9.75,
+        "height": 58.59
+      }
+    ],
+    "kvant_2009_2/0031": [
+      {
+        "issue": "kvant_2009_2",
+        "pdf_page": 31,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2009_2",
+        "pdf_page": 31,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2009_3/0036": [
+      {
+        "issue": "kvant_2009_3",
+        "pdf_page": 36,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.98
+      },
+      {
+        "issue": "kvant_2009_3",
+        "pdf_page": 36,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.56
+      }
+    ],
+    "kvant_2009_4/0033": [
+      {
+        "issue": "kvant_2009_4",
+        "pdf_page": 33,
+        "text": "Иллюстрации",
+        "width": 8.92,
+        "height": 55.98
+      },
+      {
+        "issue": "kvant_2009_4",
+        "pdf_page": 33,
+        "text": "Д.Гришуковой",
+        "width": 8.92,
+        "height": 58.56
+      }
+    ],
+    "kvant_2009_5/0030": [
+      {
+        "issue": "kvant_2009_5",
+        "pdf_page": 30,
+        "text": "Иллюстрации",
+        "width": 8.92,
+        "height": 55.98
+      },
+      {
+        "issue": "kvant_2009_5",
+        "pdf_page": 30,
+        "text": "Д.Гришуковой",
+        "width": 8.92,
+        "height": 58.56
+      }
+    ],
+    "kvant_2009_6/0028": [
+      {
+        "issue": "kvant_2009_6",
+        "pdf_page": 28,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.98
+      },
+      {
+        "issue": "kvant_2009_6",
+        "pdf_page": 28,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.56
+      }
+    ],
+    "kvant_2010_1/0036": [
+      {
+        "issue": "kvant_2010_1",
+        "pdf_page": 36,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.98
+      },
+      {
+        "issue": "kvant_2010_1",
+        "pdf_page": 36,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.56
+      }
+    ],
+    "kvant_2010_3/0038": [
+      {
+        "issue": "kvant_2010_3",
+        "pdf_page": 38,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.97
+      },
+      {
+        "issue": "kvant_2010_3",
+        "pdf_page": 38,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.58
+      }
+    ],
+    "kvant_2010_4/0029": [
+      {
+        "issue": "kvant_2010_4",
+        "pdf_page": 29,
+        "text": "Иллюстрации",
+        "width": 8.92,
+        "height": 55.96
+      },
+      {
+        "issue": "kvant_2010_4",
+        "pdf_page": 29,
+        "text": "Д.Гришуковой",
+        "width": 8.92,
+        "height": 58.6
+      }
+    ],
+    "kvant_2010_5/0036": [
+      {
+        "issue": "kvant_2010_5",
+        "pdf_page": 36,
+        "text": "Иллюстрации",
+        "width": 9.14,
+        "height": 56.0
+      },
+      {
+        "issue": "kvant_2010_5",
+        "pdf_page": 36,
+        "text": "Д.Гришуковой",
+        "width": 9.14,
+        "height": 58.58
+      }
+    ],
+    "kvant_2010_6/0029": [
+      {
+        "issue": "kvant_2010_6",
+        "pdf_page": 29,
+        "text": "Иллюстрация",
+        "width": 9.09,
+        "height": 55.14
+      },
+      {
+        "issue": "kvant_2010_6",
+        "pdf_page": 29,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.56
+      }
+    ],
+    "kvant_2014_2/0029": [
+      {
+        "issue": "kvant_2014_2",
+        "pdf_page": 29,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2014_2",
+        "pdf_page": 29,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2014_3/0029": [
+      {
+        "issue": "kvant_2014_3",
+        "pdf_page": 29,
+        "text": "Иллюстрации",
+        "width": 8.65,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2014_3",
+        "pdf_page": 29,
+        "text": "Д.Гришуковой",
+        "width": 8.65,
+        "height": 58.57
+      }
+    ],
+    "kvant_2014_4/0028": [
+      {
+        "issue": "kvant_2014_4",
+        "pdf_page": 28,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.97
+      },
+      {
+        "issue": "kvant_2014_4",
+        "pdf_page": 28,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.58
+      }
+    ],
+    "kvant_2014_5-6/0040": [
+      {
+        "issue": "kvant_2014_5-6",
+        "pdf_page": 40,
+        "text": "Иллюстрации",
+        "width": 8.81,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2014_5-6",
+        "pdf_page": 40,
+        "text": "Д.Гришуковой",
+        "width": 8.81,
+        "height": 58.57
+      }
+    ],
+    "kvant_2015_1/0029": [
+      {
+        "issue": "kvant_2015_1",
+        "pdf_page": 29,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.98
+      },
+      {
+        "issue": "kvant_2015_1",
+        "pdf_page": 29,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.56
+      }
+    ],
+    "kvant_2015_2/0026": [
+      {
+        "issue": "kvant_2015_2",
+        "pdf_page": 26,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2015_2",
+        "pdf_page": 26,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2015_3/0025": [
+      {
+        "issue": "kvant_2015_3",
+        "pdf_page": 25,
+        "text": "Иллюстрации",
+        "width": 8.92,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2015_3",
+        "pdf_page": 25,
+        "text": "Д.Гришуковой",
+        "width": 8.92,
+        "height": 58.57
+      }
+    ],
+    "kvant_2015_4/0025": [
+      {
+        "issue": "kvant_2015_4",
+        "pdf_page": 25,
+        "text": "Иллюстрации",
+        "width": 8.81,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2015_4",
+        "pdf_page": 25,
+        "text": "Д.Гришуковой",
+        "width": 8.81,
+        "height": 58.57
+      }
+    ],
+    "kvant_2016_1/0036": [
+      {
+        "issue": "kvant_2016_1",
+        "pdf_page": 36,
+        "text": "Иллюстрации",
+        "width": 8.65,
+        "height": 55.97
+      },
+      {
+        "issue": "kvant_2016_1",
+        "pdf_page": 36,
+        "text": "Д.Гришуковой",
+        "width": 8.65,
+        "height": 58.59
+      }
+    ],
+    "kvant_2016_2/0012": [
+      {
+        "issue": "kvant_2016_2",
+        "pdf_page": 12,
+        "text": "Иллюстрация",
+        "width": 9.91,
+        "height": 61.24
+      },
+      {
+        "issue": "kvant_2016_2",
+        "pdf_page": 12,
+        "text": "В.Власова",
+        "width": 9.91,
+        "height": 44.42
+      }
+    ],
+    "kvant_2016_2/0027": [
+      {
+        "issue": "kvant_2016_2",
+        "pdf_page": 27,
+        "text": "Иллюстрации",
+        "width": 8.92,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2016_2",
+        "pdf_page": 27,
+        "text": "Д.Гришуковой",
+        "width": 8.92,
+        "height": 58.57
+      }
+    ],
+    "kvant_2016_2/0028": [
+      {
+        "issue": "kvant_2016_2",
+        "pdf_page": 28,
+        "text": "Иллюстрация",
+        "width": 8.92,
+        "height": 55.16
+      },
+      {
+        "issue": "kvant_2016_2",
+        "pdf_page": 28,
+        "text": "М.Грицук",
+        "width": 8.92,
+        "height": 38.62
+      }
+    ],
+    "kvant_2016_3/0026": [
+      {
+        "issue": "kvant_2016_3",
+        "pdf_page": 26,
+        "text": "Иллюстрации",
+        "width": 8.65,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2016_3",
+        "pdf_page": 26,
+        "text": "Д.Гришуковой",
+        "width": 8.65,
+        "height": 58.57
+      }
+    ],
+    "kvant_2016_4/0024": [
+      {
+        "issue": "kvant_2016_4",
+        "pdf_page": 24,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2016_4",
+        "pdf_page": 24,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2016_5-6/0030": [
+      {
+        "issue": "kvant_2016_5-6",
+        "pdf_page": 30,
+        "text": "Иллюстрации",
+        "width": 8.65,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2016_5-6",
+        "pdf_page": 30,
+        "text": "Д.Гришуковой",
+        "width": 8.65,
+        "height": 58.57
+      }
+    ],
+    "kvant_2017_10/0029": [
+      {
+        "issue": "kvant_2017_10",
+        "pdf_page": 29,
+        "text": "Иллюстрации",
+        "width": 8.65,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2017_10",
+        "pdf_page": 29,
+        "text": "Д.Гришуковой",
+        "width": 8.65,
+        "height": 58.57
+      }
+    ],
+    "kvant_2017_6/0022": [
+      {
+        "issue": "kvant_2017_6",
+        "pdf_page": 22,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 56.01
+      },
+      {
+        "issue": "kvant_2017_6",
+        "pdf_page": 22,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.6
+      }
+    ],
+    "kvant_2017_7/0022": [
+      {
+        "issue": "kvant_2017_7",
+        "pdf_page": 22,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2017_7",
+        "pdf_page": 22,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2017_8/0024": [
+      {
+        "issue": "kvant_2017_8",
+        "pdf_page": 24,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2017_8",
+        "pdf_page": 24,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2018_12/0033": [
+      {
+        "issue": "kvant_2018_12",
+        "pdf_page": 33,
+        "text": "Иллюстрации",
+        "width": 8.65,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2018_12",
+        "pdf_page": 33,
+        "text": "Д.Гришуковой",
+        "width": 8.65,
+        "height": 58.57
+      }
+    ],
+    "kvant_2018_6/0032": [
+      {
+        "issue": "kvant_2018_6",
+        "pdf_page": 32,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2018_6",
+        "pdf_page": 32,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2018_8/0025": [
+      {
+        "issue": "kvant_2018_8",
+        "pdf_page": 25,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2018_8",
+        "pdf_page": 25,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2019_1/0034": [
+      {
+        "issue": "kvant_2019_1",
+        "pdf_page": 34,
+        "text": "Рисунки",
+        "width": 10.5,
+        "height": 37.12
+      },
+      {
+        "issue": "kvant_2019_1",
+        "pdf_page": 34,
+        "text": "М.Панова",
+        "width": 10.5,
+        "height": 46.92
+      }
+    ],
+    "kvant_2019_12/0020": [
+      {
+        "issue": "kvant_2019_12",
+        "pdf_page": 20,
+        "text": "Иллюстрации",
+        "width": 9.09,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2019_12",
+        "pdf_page": 20,
+        "text": "Д.Гришуковой",
+        "width": 9.09,
+        "height": 58.57
+      }
+    ],
+    "kvant_2019_5/0036": [
+      {
+        "issue": "kvant_2019_5",
+        "pdf_page": 36,
+        "text": "Иллюстрации",
+        "width": 8.65,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2019_5",
+        "pdf_page": 36,
+        "text": "Д.Гришуковой",
+        "width": 8.65,
+        "height": 58.57
+      }
+    ],
+    "kvant_2020_10/0019": [
+      {
+        "issue": "kvant_2020_10",
+        "pdf_page": 19,
+        "text": "Иллюстрации",
+        "width": 2.21,
+        "height": 55.97
+      },
+      {
+        "issue": "kvant_2020_10",
+        "pdf_page": 19,
+        "text": "Д.Гришуковой",
+        "width": 2.21,
+        "height": 58.56
+      }
+    ],
+    "kvant_2020_7/0033": [
+      {
+        "issue": "kvant_2020_7",
+        "pdf_page": 33,
+        "text": "Иллюстрации",
+        "width": 2.11,
+        "height": 55.97
+      },
+      {
+        "issue": "kvant_2020_7",
+        "pdf_page": 33,
+        "text": "Д.Гришуковой",
+        "width": 2.11,
+        "height": 58.56
+      }
+    ],
+    "kvant_2020_8/0028": [
+      {
+        "issue": "kvant_2020_8",
+        "pdf_page": 28,
+        "text": "Иллюстрации",
+        "width": 2.11,
+        "height": 55.98
+      },
+      {
+        "issue": "kvant_2020_8",
+        "pdf_page": 28,
+        "text": "Д.Гришуковой",
+        "width": 2.11,
+        "height": 58.58
+      }
+    ],
+    "kvant_2021_1/0014": [
+      {
+        "issue": "kvant_2021_1",
+        "pdf_page": 14,
+        "text": "Иллюстрация",
+        "width": 9.25,
+        "height": 55.13
+      },
+      {
+        "issue": "kvant_2021_1",
+        "pdf_page": 14,
+        "text": "М.Кашина",
+        "width": 9.25,
+        "height": 42.46
+      }
+    ],
+    "kvant_2021_1/0040": [
+      {
+        "issue": "kvant_2021_1",
+        "pdf_page": 40,
+        "text": "Иллюстрации",
+        "width": 8.65,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2021_1",
+        "pdf_page": 40,
+        "text": "Д.Гришуковой",
+        "width": 8.65,
+        "height": 58.57
+      }
+    ],
+    "kvant_2022_2/0005": [
+      {
+        "issue": "kvant_2022_2",
+        "pdf_page": 5,
+        "text": "Иллюстрация",
+        "width": 16.62,
+        "height": 55.13
+      },
+      {
+        "issue": "kvant_2022_2",
+        "pdf_page": 5,
+        "text": "М.Кашина",
+        "width": 16.62,
+        "height": 42.48
+      }
+    ],
+    "kvant_2023_6/0027": [
+      {
+        "issue": "kvant_2023_6",
+        "pdf_page": 27,
+        "text": "Иллюстрации",
+        "width": 16.62,
+        "height": 55.98
+      },
+      {
+        "issue": "kvant_2023_6",
+        "pdf_page": 27,
+        "text": "Д.Гришуковой",
+        "width": 16.62,
+        "height": 58.58
+      }
+    ],
+    "kvant_2023_7/0037": [
+      {
+        "issue": "kvant_2023_7",
+        "pdf_page": 37,
+        "text": "Иллюстрации",
+        "width": 16.62,
+        "height": 55.98
+      },
+      {
+        "issue": "kvant_2023_7",
+        "pdf_page": 37,
+        "text": "Д.Гришуковой",
+        "width": 16.62,
+        "height": 58.58
+      }
+    ],
+    "kvant_2024_3/0037": [
+      {
+        "issue": "kvant_2024_3",
+        "pdf_page": 37,
+        "text": "Иллюстрации",
+        "width": 16.62,
+        "height": 55.99
+      },
+      {
+        "issue": "kvant_2024_3",
+        "pdf_page": 37,
+        "text": "Д.Гришуковой",
+        "width": 16.62,
+        "height": 58.57
+      }
+    ]
+  }
+}
