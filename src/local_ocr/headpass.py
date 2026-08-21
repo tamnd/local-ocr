@@ -32,7 +32,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from local_ocr.batch import Reader, Refused
-from local_ocr.rules.validate import looks_like_head, parse_page_label, parse_section_locator
+from local_ocr.rules.validate import (
+    LONGEST_HEAD,
+    looks_like_head,
+    parse_page_label,
+    parse_section_locator,
+)
 
 # The top band of the page, as a fraction of its height. Bourbaki prints the
 # running head about 6 per cent down on a body page, and a scan is not square
@@ -64,8 +69,10 @@ NOTHING = ("none", "none.", "no running head", "n/a", "-")
 
 # A running head is a line. Longer than this and the model has transcribed the
 # first paragraph of the body, which is the failure this module exists to undo,
-# so it is dropped rather than prepended.
-LONGEST = 90
+# so it is dropped rather than prepended. The acceptance rule's number, because
+# a head this module is happy with and a head the rule rejects is a page read
+# twice for nothing.
+LONGEST = LONGEST_HEAD
 
 
 def reads_as_head(line: str) -> bool:
@@ -104,13 +111,15 @@ def reads_as_head(line: str) -> bool:
 def missing(text: str) -> bool:
     """Whether the reading needs a head put on it.
 
-    Close to the test the acceptance rule applies, and where it differs it is
-    stricter, in one direction and on purpose. The rule is a mirror of the Go
-    rules in tamnd/bourbaki-solver and its verdicts are pinned by generated
-    fixtures, so it is not the place to make this change; the cost of being
-    stricter here is one crop of one tenth of a page on a page that may not have
-    needed it, and the cost of being looser is a page that enters the corpus
-    with a paragraph where its head should be.
+    Deliberately close to the test the acceptance rule applies, so the pass
+    fires on the pages the rule would reject and on very few others. Both sides
+    of the paragraph defect were fixed together, here and in the rule, so the
+    two agree on the length gate and on the letterless line.
+
+    Where they still differ this one is stricter, and in the direction that is
+    cheap to be wrong in: the cost of asking about a page that did not need it
+    is one crop of a tenth of a page, and the cost of not asking is a page that
+    enters the corpus with a paragraph where its head should be.
 
     It cannot be the rule itself for a second reason: the rule knows from the
     page map whether a page prints a head at all, and the reader does not have
