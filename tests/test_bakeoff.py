@@ -347,3 +347,37 @@ def test_the_markdown_lists_the_pages_with_no_reading_by_name(tmp_path: Path):
 def test_writing_neither_writes_nothing(tmp_path: Path):
     bakeoff.write(card(), json_path=None, markdown_path=None)
     assert list(tmp_path.iterdir()) == []
+
+
+def readings(root: Path, name: str, ids: list[str]) -> Path:
+    """A directory holding a reading for exactly these page ids."""
+    where = root / name
+    for page_id in ids:
+        issue, _, number = page_id.partition("/")
+        (where / issue).mkdir(parents=True, exist_ok=True)
+        (where / issue / f"{number}.md").write_text("текст", encoding="utf-8")
+    return where
+
+
+def test_the_shared_set_is_the_pages_every_reader_produced(tmp_path: Path):
+    pages = [page(page_index=n) for n in (16, 17, 18)]
+    a = readings(tmp_path, "a", ["kvant_2018_10/0016", "kvant_2018_10/0017"])
+    b = readings(tmp_path, "b", ["kvant_2018_10/0017", "kvant_2018_10/0018"])
+    assert [p.id for p in bakeoff.shared(pages, [a, b])] == ["kvant_2018_10/0017"]
+
+
+def test_a_reader_that_produced_nothing_leaves_nothing_shared(tmp_path: Path):
+    pages = [page(page_index=16)]
+    a = readings(tmp_path, "a", ["kvant_2018_10/0016"])
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert bakeoff.shared(pages, [a, empty]) == []
+
+
+def test_the_shared_set_keeps_the_order_the_set_was_drawn_in(tmp_path: Path):
+    # The card lists worst pages by rate, but every denominator here is a count
+    # over this list, so a stable order keeps two runs of the same set equal.
+    pages = [page(page_index=n) for n in (18, 16, 17)]
+    ids = ["kvant_2018_10/0016", "kvant_2018_10/0017", "kvant_2018_10/0018"]
+    a = readings(tmp_path, "a", ids)
+    assert [p.page_index for p in bakeoff.shared(pages, [a])] == [18, 16, 17]

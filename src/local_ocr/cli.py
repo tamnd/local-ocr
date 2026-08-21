@@ -449,6 +449,26 @@ def golden_cmd(argv: Sequence[str]) -> int:
     return 0
 
 
+def _readings(given: Sequence[str], fallback: str) -> list[tuple[str, Path]]:
+    """`--readings` as a list of labelled directories.
+
+    `NAME=DIR` labels a reader explicitly. A bare directory takes `--model` when
+    it is the only one, which is what every existing caller passes, and takes
+    the directory's own name when there are several, because `--model` cannot
+    name four of them and a table whose four rows are all called reader is worse
+    than no table at all.
+    """
+    out: list[tuple[str, Path]] = []
+    for item in given:
+        name, sep, where = item.partition("=")
+        if sep:
+            out.append((name, Path(where)))
+        else:
+            path = Path(item)
+            out.append((fallback if len(given) == 1 else path.name, path))
+    return out
+
+
 def kvant_cmd(argv: Sequence[str]) -> int:
     """`kvant draw`, `check`, `show`, `pages` and `eval`, the Russian tier B set.
 
@@ -471,8 +491,20 @@ def kvant_cmd(argv: Sequence[str]) -> int:
         action="store_true",
         help="re-render pages already on disk, which is how a dpi change takes effect",
     )
-    parser.add_argument("--readings", type=Path, default=None, help="for eval, Markdown to judge")
+    parser.add_argument(
+        "--readings",
+        action="append",
+        default=[],
+        metavar="[NAME=]DIR",
+        help="for eval and rotated, Markdown to judge; repeat it for a ranking",
+    )
     parser.add_argument("--model", default="reader", help="for eval, the name on the card")
+    parser.add_argument(
+        "--shared",
+        action="store_true",
+        help="score only the pages every reader produced, which is the fair page for page "
+        "comparison and is not the same question as which reader answers most often",
+    )
     parser.add_argument(
         "--lexicon",
         type=Path,
@@ -511,7 +543,7 @@ def kvant_cmd(argv: Sequence[str]) -> int:
         # out of the PDFs every time.
         from local_ocr import rotated
 
-        if args.readings is None:
+        if not args.readings:
             print(
                 f"{PROG}: kvant rotated needs --readings, or --draw to rebuild the set",
                 file=sys.stderr,
@@ -522,9 +554,20 @@ def kvant_cmd(argv: Sequence[str]) -> int:
         except FileNotFoundError as err:
             print(f"{PROG}: {err}", file=sys.stderr)
             return 2
-        card = rotated.score(args.readings, where, model=args.model)
-        rotated.write(card, json_path=args.json_path, markdown_path=args.markdown_path)
-        print(card.to_markdown())
+        chosen = _readings(args.readings, args.model)
+        if args.shared:
+            where = rotated.shared(where, [path for _name, path in chosen])
+            print(
+                f"{PROG}: {len(where)} pages every reader produced, out of "
+                f"{len(rotated.reference())}",
+                file=sys.stderr,
+            )
+        cards = [rotated.score(path, where, model=name) for name, path in chosen]
+        if len(cards) > 1:
+            print(rotated.table(cards), end="")
+            return 0
+        rotated.write(cards[0], json_path=args.json_path, markdown_path=args.markdown_path)
+        print(cards[0].to_markdown())
         return 0
 
     try:
@@ -573,7 +616,7 @@ def kvant_cmd(argv: Sequence[str]) -> int:
     if args.action == "eval":
         from local_ocr import bakeoff, golden, russian
 
-        if args.readings is None:
+        if not args.readings:
             print(f"{PROG}: kvant eval needs --readings, a directory of Markdown", file=sys.stderr)
             return 2
         name = args.name or "kvant-dev"
@@ -591,9 +634,22 @@ def kvant_cmd(argv: Sequence[str]) -> int:
             words: set[str] = set()
         else:
             words = russian.lexicon(words_at)
-        card = bakeoff.run(chosen, args.readings, words, model=args.model, set_name=name)
-        bakeoff.write(card, json_path=args.json_path, markdown_path=args.markdown_path)
-        print(card.to_markdown())
+        readers = _readings(args.readings, args.model)
+        if args.shared:
+            whole = len(chosen)
+            chosen = bakeoff.shared(chosen, [path for _name, path in readers])
+            print(
+                f"{PROG}: {len(chosen)} pages every reader produced, out of {whole}",
+                file=sys.stderr,
+            )
+        cards = [
+            bakeoff.run(chosen, path, words, model=label, set_name=name) for label, path in readers
+        ]
+        if len(cards) > 1:
+            print(bakeoff.table(cards), end="")
+            return 0
+        bakeoff.write(cards[0], json_path=args.json_path, markdown_path=args.markdown_path)
+        print(cards[0].to_markdown())
         return 0
 
     drawn = kvant.draw(corpus, store)
@@ -1084,6 +1140,12 @@ def _usage() -> str:
         "because an extraction that has them is not where the failure is. It scores\n"
         "recall over runs, since half a surname helps nobody, and it scores without\n"
         "a corpus or a cache because the runs are written into the manifest.\n"
+        "\n"
+        "Both of those take --readings more than once, as NAME=DIR, and print one\n"
+        "ranked table instead of a card each. --shared then cuts the set down to the\n"
+        "pages every reader produced. That is the fair page for page comparison and\n"
+        "it is a different question from which reader answers most often, so a report\n"
+        "has to carry the completion counts beside it.\n"
     )
 
 

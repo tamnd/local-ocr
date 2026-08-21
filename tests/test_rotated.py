@@ -356,3 +356,71 @@ def test_the_shipped_set_is_the_one_the_docstring_describes():
 
 def test_the_shipped_set_does_not_touch_the_held_out_one():
     assert not set(rotated.reference()) & set(kvant.read_manifest("kvant-test"))
+
+
+def reader(root: Path, name: str, pages: dict[str, str]) -> Path:
+    """A directory of readings in the shape `ocr-batch` writes."""
+    where = root / name
+    for page_id, text in pages.items():
+        issue, _, number = page_id.partition("/")
+        (where / issue).mkdir(parents=True, exist_ok=True)
+        (where / issue / f"{number}.md").write_text(text, encoding="utf-8")
+    return where
+
+
+def test_the_shared_set_is_the_pages_every_reader_produced(tmp_path):
+    where = {
+        "kvant_2018_10/0016": [run_of(NAME)],
+        "kvant_2018_10/0017": [run_of(NAME)],
+        "kvant_2018_10/0018": [run_of(NAME)],
+    }
+    a = reader(tmp_path, "a", dict.fromkeys(where, "текст"))
+    b = reader(tmp_path, "b", {"kvant_2018_10/0016": "текст", "kvant_2018_10/0018": "текст"})
+    assert sorted(rotated.shared(where, [a, b])) == [
+        "kvant_2018_10/0016",
+        "kvant_2018_10/0018",
+    ]
+
+
+def test_one_reader_shares_the_pages_it_read_and_nothing_else(tmp_path):
+    where = {"kvant_2018_10/0016": [run_of(NAME)], "kvant_2018_10/0017": [run_of(NAME)]}
+    a = reader(tmp_path, "a", {"kvant_2018_10/0017": "текст"})
+    assert list(rotated.shared(where, [a])) == ["kvant_2018_10/0017"]
+
+
+def test_the_shared_cut_is_what_turns_a_reader_that_answers_rarely_around(tmp_path):
+    # The trap this exists for. b reads one page of two and reads it perfectly;
+    # a reads both and gets one wrong. Over the whole set a leads, over the
+    # shared page b does, and a report needs both numbers.
+    where = {"kvant_2018_10/0016": [run_of(NAME)], "kvant_2018_10/0017": [run_of(NAME)]}
+    a = reader(
+        tmp_path,
+        "a",
+        {"kvant_2018_10/0016": f"Иллюстрации {NAME}", "kvant_2018_10/0017": "нет подписи"},
+    )
+    b = reader(tmp_path, "b", {"kvant_2018_10/0017": f"Иллюстрации {NAME}"})
+    whole = [rotated.score(d, where, model=n) for n, d in (("a", a), ("b", b))]
+    assert [card.recall() for card in whole] == [0.5, 0.5]
+    assert [len(card.failures) for card in whole] == [0, 1]
+
+    cut = rotated.shared(where, [a, b])
+    only = [rotated.score(d, cut, model=n) for n, d in (("a", a), ("b", b))]
+    assert [card.recall() for card in only] == [0.0, 1.0]
+
+
+def test_the_table_ranks_by_recall_and_not_by_the_order_it_was_given(tmp_path):
+    where = {"kvant_2018_10/0016": [run_of(NAME)]}
+    poor = reader(tmp_path, "poor", {"kvant_2018_10/0016": "нет подписи"})
+    good = reader(tmp_path, "good", {"kvant_2018_10/0016": f"Иллюстрации {NAME}"})
+    text = rotated.table(
+        [rotated.score(poor, where, model="poor"), rotated.score(good, where, model="good")]
+    )
+    lines = text.strip().split("\n")
+    assert lines[2].startswith("| good |")
+    assert lines[3].startswith("| poor |")
+
+
+def test_the_table_says_how_many_pages_each_reader_never_answered(tmp_path):
+    where = {"kvant_2018_10/0016": [run_of(NAME)], "kvant_2018_10/0017": [run_of(NAME)]}
+    half = reader(tmp_path, "half", {"kvant_2018_10/0016": f"Иллюстрации {NAME}"})
+    assert "| 1 |" in rotated.table([rotated.score(half, where, model="half")])
