@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from local_ocr.batch import Refused
-from local_ocr.headpass import HeadPass, band, missing, usable
+from local_ocr.headpass import PROMPT, HeadPass, band, completes, missing, usable
 
 HEADED = "ARTINIAN MODULES AND NOETHERIAN MODULES A VIII.10\n\nPROPOSITION 7. Let A be a ring.\n"
 BARE = "PROPOSITION 7. Let A be a ring, and let X be an indeterminate over it.\n"
@@ -286,6 +286,116 @@ class TestBatchLine:
     ) -> None:
         out = self.run(tmp_path, HeadPass(Stub(page=HEADED)), capsys)
         assert "head pass" not in out
+
+
+HALF = "ANNEAUX\n\nPROPOSITION 7. Let A be a ring, and let X be an indeterminate over it.\n"
+WHOLE = (
+    "ANNEAUX A I.109\n\nPROPOSITION 7. Let A be a ring, and let X be an indeterminate over it.\n"
+)
+
+
+class Volume:
+    """A reader for a volume that prints a page label, with pages that lost it.
+
+    The page answer is chosen by the caller, one to a call, so a batch of pages
+    can be walked past a single wrapper the way a real batch is. The strip
+    answers the same head every time, with the label on it.
+    """
+
+    def __init__(self, pages: list[str], head: str = "ANNEAUX A I.109") -> None:
+        self.pages = list(pages)
+        self.head = head
+        self.strips = 0
+
+    async def read(self, image: Path, prompt: str) -> str:
+        if prompt == PROMPT:
+            self.strips += 1
+            return self.head
+        return self.pages.pop(0)
+
+
+class TestTheLostPageLabel:
+    """A head that is there and short of its label, on a volume that prints one.
+
+    71 pages of four volumes are this, every one read three times and then dead,
+    and none of them was ever asked about because none of them looked wrong.
+    """
+
+    def walk(self, reader: HeadPass, page: Path, count: int) -> list[str]:
+        return [asyncio.run(reader.read(page, "read this")) for _ in range(count)]
+
+    def test_nothing_is_believed_about_a_volume_from_too_few_pages(self, page: Path) -> None:
+        """Seven labelled pages is not yet a volume that prints labels."""
+        reader = HeadPass(Volume([WHOLE] * 7))
+        self.walk(reader, page, 7)
+        assert not reader.wants_label()
+        assert reader.asked == 0
+
+    def test_a_volume_that_labels_its_pages_is_learned_from_its_pages(self, page: Path) -> None:
+        reader = HeadPass(Volume([WHOLE] * 8))
+        self.walk(reader, page, 8)
+        assert reader.wants_label()
+        assert reader.asked == 0, "every one of them already had its label"
+
+    def test_the_label_is_put_back_on_the_page_that_lost_it(self, page: Path) -> None:
+        inner = Volume([WHOLE] * 8 + [HALF])
+        reader = HeadPass(inner)
+        out = self.walk(reader, page, 9)
+        assert inner.strips == 1, "one strip, for the one page that needed it"
+        assert out[-1].startswith("ANNEAUX A I.109\n")
+        assert reader.completed == 1
+        assert reader.fixed == 0, "the head was there, so nothing was prepended"
+
+    def test_the_body_is_left_exactly_as_it_arrived(self, page: Path) -> None:
+        reader = HeadPass(Volume([WHOLE] * 8 + [HALF]))
+        out = self.walk(reader, page, 9)[-1]
+        assert out.split("\n", 1)[1] == HALF.split("\n", 1)[1]
+
+    def test_a_volume_that_prints_no_label_is_never_asked(self, page: Path) -> None:
+        """foot-number volumes carry a title and a locator and nothing else."""
+        reader = HeadPass(Volume([HALF] * 12))
+        self.walk(reader, page, 12)
+        assert not reader.wants_label()
+        assert reader.asked == 0
+
+    def test_a_strip_that_answers_a_different_head_changes_nothing(self, page: Path) -> None:
+        """The guard against putting one page's head on another page."""
+        reader = HeadPass(Volume([WHOLE] * 8 + [HALF], head="POLYNOMES A IV.7"))
+        out = self.walk(reader, page, 9)[-1]
+        assert out == HALF
+        assert reader.completed == 0
+        assert reader.asked == 9 - 8, "asked once, and the answer was not usable"
+
+    def test_a_strip_with_no_label_on_it_changes_nothing(self, page: Path) -> None:
+        reader = HeadPass(Volume([WHOLE] * 8 + [HALF], head="ANNEAUX"))
+        assert self.walk(reader, page, 9)[-1] == HALF
+        assert reader.completed == 0
+
+    def test_a_page_with_no_head_at_all_still_takes_the_other_path(self, page: Path) -> None:
+        """Both repairs live here and the missing head is the older one."""
+        reader = HeadPass(Volume([WHOLE] * 8 + [BARE]))
+        out = self.walk(reader, page, 9)[-1]
+        assert out.startswith("ANNEAUX A I.109\n\n")
+        assert out.endswith(BARE)
+        assert reader.fixed == 1 and reader.completed == 0
+
+
+class TestCompletes:
+    """The guard, on its own, because it is what makes the edit safe."""
+
+    def test_the_page_head_has_to_be_inside_the_strip_head(self) -> None:
+        assert completes("ANNEAUX A I.109", HALF)
+        assert not completes("POLYNOMES A IV.7", HALF)
+
+    def test_the_strip_head_has_to_carry_a_label(self) -> None:
+        assert not completes("ANNEAUX", HALF)
+
+    def test_a_page_that_already_has_a_label_is_left_alone(self) -> None:
+        assert not completes("ANNEAUX A I.109", WHOLE)
+
+    def test_the_spacing_and_the_case_do_not_decide_it(self) -> None:
+        """The two came out of two different requests, so they differ in both."""
+        assert completes("Anneaux  A I.109", HALF)
 
 
 class Counting(Stub):

@@ -18,10 +18,37 @@ answer goes on the front of the reading. The crop is about a tenth of the page,
 so the second look costs a fraction of the first, and only the pages that need
 it pay for it.
 
-This is a repair and it is honest about being one. It never rewrites a line the
-reader produced, it only prepends one that is missing, and if the second look
-fails or comes back with something that is not a head then the reading is passed
-through as it was. A page that arrives here unreadable leaves here unreadable.
+This is a repair and it is honest about being one. It never invents a head, and
+if the second look fails or comes back with something that is not a head then
+the reading is passed through as it was. A page that arrives here unreadable
+leaves here unreadable.
+
+## The half a head
+
+There is a second way to lose the line, and it costs about as much as losing it
+whole. On the volumes that print a page label in the running head, the reader
+often brings back the title and not the label: `ANNEAUX` where the page prints
+`ANNEAUX A I.109`, `EXTENSIONS RADICIELLES` where it prints the label too. That
+line reads as a head, so the gate above is happy with it, and rule 4 on the Go
+side is not: a `head-label` volume has to show a label. The page is read again,
+the reader drops the label again, and after three attempts the page is dead.
+
+Counted over the raw readings on disk, 71 pages of four volumes are exactly
+this, every one of them read three times: 32 in `alg-i-iii-fr`, 29 in
+`ac-viii-ix-fr`, 9 in `alg-iv-vii-fr` and 1 in `alg-iv-vii`. None of them was
+ever asked about, because none of them looked wrong from here.
+
+So the wrapper watches the volume rather than being told about it. A batch is
+one volume, the pages go past one at a time, and a volume that prints a label
+prints it on nearly every body page. After eight pages, if most of them opened
+with a label, the wrapper starts asking about the ones that do not. The strip
+answer is only used when it is the page's own head with the label put back, so
+a strip that answers something else changes nothing.
+
+That is the one place this module edits a line rather than prepending one, and
+it is the same line read off the same pixels at ten times the size. The guard is
+`completes`: the strip has to carry a label, the page's line has to carry none,
+and the page's line has to be contained in the strip's.
 """
 
 from __future__ import annotations
@@ -145,6 +172,64 @@ def usable(answer: str) -> str | None:
     return line if reads_as_head(line) else None
 
 
+# How many pages go past before the wrapper will believe anything about what
+# this volume prints, and what share of them has to carry a page label.
+#
+# Eight and three fifths. A batch is sixteen pages at the smallest, so eight is
+# half of the smallest thing this ever runs on and the belief is formed early
+# enough to be worth having. Three fifths rather than a bare majority because
+# the front matter of a volume prints no label at all and a batch that opens on
+# the front matter would otherwise spend its first pages arguing with itself.
+# On alg-i-iii-fr, which is the volume this was measured on, 396 of the 480
+# pages read carry a label on every attempt, so the real share is 82 per cent
+# and neither number is close to the edge.
+LEARN = 8
+SHARE = 0.6
+
+
+def labelled(text: str) -> bool:
+    """Whether the reading opens with a line that carries a page label."""
+    return parse_page_label(_first(text)) is not None
+
+
+def completes(head: str, text: str) -> bool:
+    """Whether the strip answer is the page's own head with its label put back.
+
+    Three tests, and all three matter. The strip has to carry a label, or there
+    is nothing to put back. The page's line must not already carry one, or there
+    was nothing wrong with it. And the page's line has to be contained in the
+    strip's, on the letters and digits alone, because that containment is what
+    says the two are the same head rather than two different readings of the
+    top of the page, and a strip answer that is not the page's head is a strip
+    answer this module will not put in place of one.
+    """
+    first = _first(text)
+    if parse_page_label(head) is None or parse_page_label(first) is not None:
+        return False
+    key = _key(first)
+    return bool(key) and key in _key(head)
+
+
+def _first(text: str) -> str:
+    return next((line.strip() for line in text.splitlines() if line.strip()), "")
+
+
+def _key(line: str) -> str:
+    return "".join(ch for ch in line.casefold() if ch.isalnum())
+
+
+def _replace_first(head: str, text: str) -> str:
+    """The reading with its first line swapped for the one off the strip."""
+    lines = text.splitlines(keepends=True)
+    for number, line in enumerate(lines):
+        if not line.strip():
+            continue
+        end = "\n" if line.endswith("\n") else ""
+        lines[number] = head + end
+        return "".join(lines)
+    return text
+
+
 def _same(head: str, text: str) -> bool:
     """Whether the strip handed back the line the reading already opens with.
 
@@ -152,9 +237,8 @@ def _same(head: str, text: str) -> bool:
     different requests and the spacing and the punctuation around a page label
     are the first things to differ between them.
     """
-    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
-    key = "".join(ch for ch in head.casefold() if ch.isalnum())
-    return bool(key) and key == "".join(ch for ch in first.casefold() if ch.isalnum())
+    key = _key(head)
+    return bool(key) and key == _key(_first(text))
 
 
 def band(image: Path, out: Path, fraction: float = BAND) -> Path:
@@ -189,6 +273,13 @@ class HeadPass:
     prompt: str = PROMPT
     asked: int = field(default=0, init=False)
     fixed: int = field(default=0, init=False)
+    completed: int = field(default=0, init=False)
+    """Pages whose head was there but had lost its label. See the module note."""
+
+    seen: int = field(default=0, init=False)
+    labels: int = field(default=0, init=False)
+    """What this batch has shown about the volume: how many readings went past
+    and how many of them opened with a page label."""
     _strip: dict[Path, tuple[int, int]] = field(default_factory=dict, init=False, repr=False)
     """What the second look cost, kept under the page it was taken for.
 
@@ -197,9 +288,20 @@ class HeadPass:
     are lost. A page read on 90 of 122 pages is not a rounding error.
     """
 
+    def wants_label(self) -> bool:
+        """Whether this batch has shown that its volume prints a page label."""
+        return self.seen >= LEARN and self.labels >= self.seen * SHARE
+
     async def read(self, image: Path, prompt: str) -> str:
         text = await self.inner.read(image, prompt)
-        if not missing(text):
+        # Counted before the decision, so the page being judged is part of the
+        # evidence about its own volume. A label-less page is a vote against the
+        # volume printing labels and it should be allowed to cast it.
+        self.seen += 1
+        if labelled(text):
+            self.labels += 1
+        gone = missing(text)
+        if not gone and not (self.wants_label() and not labelled(text)):
             return text
         self.asked += 1
         with TemporaryDirectory(prefix="local-ocr-head-") as scratch:
@@ -216,6 +318,13 @@ class HeadPass:
         head = usable(answer)
         if head is None:
             return text
+        if not gone:
+            # The page has a head and it is short of its label. Only the strip's
+            # own reading of that same head goes in its place.
+            if not completes(head, text):
+                return text
+            self.completed += 1
+            return _replace_first(head, text)
         if _same(head, text):
             # The gate thought the page had no head and the strip disagreed by
             # handing back the line the page already opens with. Prepending it
