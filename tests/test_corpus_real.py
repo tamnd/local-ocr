@@ -85,8 +85,33 @@ def test_a_first_line_that_is_not_the_head_is_left_alone(dev):
 
 
 def test_the_pages_are_the_tier_they_claim_to_be(dev):
-    assert {page.method for page in dev} == {"native"}
     assert {page.book for page in dev} <= set(golden.TIER_B_VOLUMES)
+    # Not `{page.method} == {"native"}` any more, which is what this asserted
+    # until the day it caught something. A set is a list of ids frozen once and
+    # the pages under those ids go on being read: four of these had their text
+    # layer found to have dropped a glyph and were re-read by the fleet, so
+    # their reference is a model's reading now. The invariant that survives is
+    # that no such page is scored, not that no such page exists, because the
+    # corpus is allowed to improve a page and the set is not allowed to pretend
+    # it did not.
+    assert {page.method for page in dev if not page.manual} <= {"native", "ocr"}
+    for page in golden.stale("golden-dev", dev):
+        assert page.method != "native", page.id
+
+
+@pytest.mark.parametrize("name", sorted(golden.SETS))
+def test_a_reference_that_is_no_longer_ground_truth_is_not_scored_against(name):
+    """The set may drift. A number measured against the drift may not.
+
+    `golden-incumbent` has no ground truth by construction and every page in it
+    is tier C, so it has nothing to drop and this passes vacuously there. That
+    is the right shape: the check is over what a set promised, and that set
+    promised nothing.
+    """
+    pages = golden.load(name, purpose=golden.Purpose.MILESTONE)
+    stale = golden.stale(name, pages)
+    scored = [page for page in pages if page not in stale]
+    assert all(golden.in_tier(page, golden.SETS[name].tier) or page.manual for page in scored)
 
 
 def test_the_head_is_ordered_by_the_page_number(dev):

@@ -7,8 +7,11 @@ a machine that has never seen a page.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from local_ocr import corpus as corpuslib
 from local_ocr import golden
 
 
@@ -96,3 +99,85 @@ def test_the_draw_key_is_stable():
     """A digest and not a random number generator, so a draw reproduces."""
     assert golden._rank("alg-viii/0042", "dense") == golden._rank("alg-viii/0042", "dense")
     assert golden._rank("alg-viii/0042", "dense") != golden._rank("alg-viii/0042", "plain")
+
+
+def _page(
+    page_id: str = "alg-viii/0118",
+    method: str = "native",
+    manual: bool = False,
+    body: str = "Some text.",
+) -> corpuslib.Page:
+    book, _, number = page_id.partition("/")
+    return corpuslib.Page(
+        book=book,
+        pdf_page=int(number),
+        method=method,
+        manual=manual,
+        body=body,
+        path=Path(f"/corpus/pages/{page_id}.md"),
+    )
+
+
+class TestWhetherAPageIsStillTheTierItWasDrawnAs:
+    def test_a_native_tier_b_page_is_in_tier(self):
+        assert golden.in_tier(_page(), "B")
+
+    def test_a_tier_b_page_that_was_read_by_the_fleet_has_left_it(self):
+        # The case this was written for. The extraction dropped a glyph, the
+        # page went to the fleet, the id did not change, and the reference is a
+        # model's reading now.
+        assert not golden.in_tier(_page(method="ocr"), "B")
+
+    def test_a_native_page_from_a_volume_with_no_text_layer_is_not_tier_b(self):
+        assert not golden.in_tier(_page("ac-i-vii/0042"), "B")
+
+    def test_an_empty_page_is_not_a_tier_b_reference(self):
+        assert not golden.in_tier(_page(body="   \n"), "B")
+
+    def test_tier_a_is_whether_a_person_read_it(self):
+        assert golden.in_tier(_page(method="ocr", manual=True), "A")
+        assert not golden.in_tier(_page(manual=False), "A")
+
+    def test_tier_c_is_what_the_fleet_read(self):
+        assert golden.in_tier(_page(method="ocr"), "C")
+        assert not golden.in_tier(_page(method="native"), "C")
+
+    def test_a_tier_nobody_has_defined_is_not_quietly_failed(self):
+        # Returning False for an unknown tier would report every page of a new
+        # set as stale, which reads as a corrupt set rather than as a gap here.
+        assert golden.in_tier(_page(), "Z")
+
+
+class TestWhichPagesAreStale:
+    def test_a_page_that_left_its_tier_is_stale(self):
+        pages = [_page(), _page("alg-viii/0311", method="ocr")]
+        assert [p.id for p in golden.stale("golden-dev", pages)] == ["alg-viii/0311"]
+
+    def test_a_page_a_person_read_is_never_stale(self):
+        # The tier is about where the reference came from and a person is the
+        # best source there is, so a hand read page improves on any tier.
+        pages = [_page("alg-viii/0311", method="ocr", manual=True)]
+        assert golden.stale("golden-dev", pages) == []
+
+    def test_the_incumbent_set_has_nothing_to_lose(self):
+        assert golden.stale("golden-incumbent", [_page(method="ocr")]) == []
+
+    def test_a_set_with_no_drift_reports_none(self):
+        assert golden.stale("golden-dev", [_page(), _page("alg-viii/0311")]) == []
+
+
+class TestDriftReportsIt:
+    def _drift(self, left: list[str]) -> golden.Drift:
+        return golden.Drift(
+            name="golden-test", recorded=200, would_draw=200, gone=[], arrived=[], left=left
+        )
+
+    def test_a_set_that_lost_a_tier_is_not_steady(self):
+        assert not self._drift(["alg-viii/0353"]).steady
+
+    def test_the_line_names_the_tier_that_was_left(self):
+        assert "1 no longer tier B" in self._drift(["alg-viii/0353"]).line()
+
+    def test_a_set_that_kept_its_tier_is_steady(self):
+        assert self._drift([]).steady
+        assert self._drift([]).line() == "golden-test: 200 pages, unchanged"
