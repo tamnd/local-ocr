@@ -20,7 +20,8 @@ what the caller is going to do with the pages before it hands them over.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
@@ -252,6 +253,39 @@ def draw(corpus: Path, dev_size: int = 200, test_size: int = 200) -> Draw:
     return Draw(sorted(dev), sorted(test), hard, incumbent)
 
 
+def in_tier(page: corpuslib.Page, tier: str) -> bool:
+    """Whether a page still meets the predicate the set was drawn on.
+
+    The predicates are `draw`'s, lifted out so that a set can be asked the
+    question again afterwards, which is the part that was missing. A set is a
+    list of ids frozen once and the pages under those ids go on being read: a
+    tier B page whose text layer turned out to have dropped a glyph gets read by
+    the fleet instead, and the id does not change when it does. What changes is
+    that the reference stopped being an extraction nobody guessed at and became
+    a model's reading, and a number measured against that is one model marking
+    another's homework.
+    """
+    if tier == "A":
+        return page.manual
+    if tier == "B":
+        return page.method == "native" and page.book in TIER_B_VOLUMES and bool(page.body.strip())
+    if tier == "C":
+        return page.method == "ocr"
+    return True
+
+
+def stale(name: str, pages: Sequence[corpuslib.Page]) -> list[corpuslib.Page]:
+    """The pages of a set whose reference has left the tier the set was drawn on.
+
+    A page a person has since read by hand is never stale, whatever its method
+    field says. The tier is about where the reference came from and a person is
+    the best source there is, so a hand read page is an improvement on any tier
+    and not a departure from one.
+    """
+    tier = SETS[name].tier
+    return [page for page in pages if not page.manual and not in_tier(page, tier)]
+
+
 @dataclass(frozen=True)
 class Drift:
     """How a recorded set differs from what the same draw would choose today."""
@@ -263,18 +297,30 @@ class Drift:
     """Ids in the manifest that are no longer pages in the corpus."""
     arrived: list[str]
     """Ids the draw would choose now and did not choose then."""
+    left: list[str] = field(default_factory=list)
+    """Ids still in the set whose page no longer meets the set's tier.
+
+    Worse than the other two and easy to miss next to them. A page that has gone
+    leaves a hole somebody notices; a page that has arrived is a set that has
+    stopped being a fair draw. A page that has quietly changed tier is still
+    there, still the right count, and its reference is now a guess.
+    """
 
     @property
     def steady(self) -> bool:
-        return not self.gone and not self.arrived
+        return not self.gone and not self.arrived and not self.left
 
     def line(self) -> str:
         if self.steady:
             return f"{self.name}: {self.recorded} pages, unchanged"
-        return (
+        line = (
             f"{self.name}: {self.recorded} recorded, {self.would_draw} today, "
             f"{len(self.gone)} gone, {len(self.arrived)} new"
         )
+        if self.left:
+            tier = SETS[self.name].tier
+            line += f", {len(self.left)} no longer tier {tier}"
+        return line
 
 
 def check(corpus: Path) -> list[Drift]:
@@ -294,18 +340,20 @@ def check(corpus: Path) -> list[Drift]:
         "golden-hard": drawn.hard,
         "golden-incumbent": drawn.incumbent,
     }
-    here = {page.id for page in corpuslib.pages(corpus)}
+    by_id = {page.id: page for page in corpuslib.pages(corpus)}
     out: list[Drift] = []
     for name in SETS:
         recorded = read_manifest(name)
         now = today[name]
+        still_here = [by_id[page_id] for page_id in recorded if page_id in by_id]
         out.append(
             Drift(
                 name=name,
                 recorded=len(recorded),
                 would_draw=len(now),
-                gone=sorted(page_id for page_id in recorded if page_id not in here),
+                gone=sorted(page_id for page_id in recorded if page_id not in by_id),
                 arrived=sorted(set(now) - set(recorded)),
+                left=sorted(page.id for page in stale(name, still_here)),
             )
         )
     return out

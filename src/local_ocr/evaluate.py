@@ -211,6 +211,10 @@ class Report:
     model: str
     results: list[PageResult] = field(default_factory=list)
     house: conformance.Conformance = field(default_factory=conformance.Conformance)
+    unscored: list[str] = field(default_factory=list)
+    """Pages of the set that were left out because their reference is no longer
+    ground truth. Named individually and not just counted, because the remedy is
+    that somebody reads those particular pages off the printed page."""
 
     @property
     def failures(self) -> list[PageResult]:
@@ -282,9 +286,15 @@ class Report:
             "set": self.set_name,
             "model": self.model,
             "pages": {
-                "in_set": len(self.results),
+                # The set's own size, so that a reader of two reports can see
+                # that one of them scored fewer pages than the set holds. With
+                # `in_set` counting only what was scored, a set that quietly
+                # lost four pages reports a full house.
+                "in_set": len(self.results) + len(self.unscored),
+                "scored": len(self.results),
                 "read": len(self.results) - len(self.failures),
                 "failed": len(self.failures),
+                "unscored": self.unscored,
             },
             "cer": {
                 "page": round(whole, 6),
@@ -334,6 +344,19 @@ class Report:
             f"{read} of {len(self.results)} pages read, {len(self.failures)} failed. "
             "A failed page is judged as an empty reading and stays in every denominator below.",
             "",
+            *(
+                [
+                    f"{len(self.unscored)} of the set's "
+                    f"{len(self.results) + len(self.unscored)} pages were left out, because "
+                    "their reference is no longer an extraction and scoring against it would "
+                    "be one reader marking another. They are the pages the extraction got "
+                    "wrong, so they are harder than average and leaving them out moves every "
+                    "number here in the flattering direction: " + ", ".join(self.unscored) + ".",
+                    "",
+                ]
+                if self.unscored
+                else []
+            ),
             "| Metric | Value |",
             "| --- | --- |",
             f"| Prose CER | {prose:.2%} |",
@@ -441,8 +464,25 @@ def evaluate(
 ) -> Report:
     """Run a golden set against a directory of readings."""
     pages = golden.load(set_name, purpose=purpose, corpus=corpus)
-    report = Report(set_name=set_name, model=model or readings.name)
+    # Pages whose reference has stopped being ground truth since the set was
+    # drawn. Scoring them would compare a reader against another reader's
+    # reading of the same page, and a model that agrees with its predecessor
+    # would score well for it.
+    #
+    # Dropped and counted, not dropped quietly. These are pages the extraction
+    # got wrong badly enough that somebody sent them to the fleet, so they are
+    # harder than average and taking them out moves every number in the
+    # flattering direction. The count is on the report for that reason and the
+    # fix is a person reading them, not a smaller set.
+    dropped = {page.id for page in golden.stale(set_name, pages)}
+    report = Report(
+        set_name=set_name,
+        model=model or readings.name,
+        unscored=sorted(dropped),
+    )
     for page in pages:
+        if page.id in dropped:
+            continue
         path = find_reading(readings, page.id)
         if path is None:
             text, why = "", f"no reading found under {readings}"

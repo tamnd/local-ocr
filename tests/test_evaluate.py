@@ -196,8 +196,34 @@ class TestReport:
     def test_the_failure_is_named_and_counted(self):
         report = self.build()
         blob = report.to_json()
-        assert blob["pages"] == {"in_set": 2, "read": 1, "failed": 1}
+        assert blob["pages"] == {
+            "in_set": 2,
+            "scored": 2,
+            "read": 1,
+            "failed": 1,
+            "unscored": [],
+        }
         assert blob["failures"][0]["page"] == "alg-viii/0043"
+
+    def test_a_page_left_out_is_still_counted_in_the_set(self):
+        # The number that would mislead is `in_set` following the scored count,
+        # which lets a set that quietly lost four pages report a full house.
+        report = self.build()
+        report.unscored = ["alg-viii/0118"]
+        blob = report.to_json()
+        assert blob["pages"]["in_set"] == 3
+        assert blob["pages"]["scored"] == 2
+        assert blob["pages"]["unscored"] == ["alg-viii/0118"]
+
+    def test_a_page_left_out_is_named_in_the_markdown_and_the_direction_stated(self):
+        report = self.build()
+        report.unscored = ["alg-viii/0118"]
+        text = report.to_markdown()
+        assert "alg-viii/0118" in text
+        assert "flattering direction" in text
+
+    def test_a_report_that_left_nothing_out_says_nothing_about_it(self):
+        assert "were left out" not in self.build().to_markdown()
 
     def test_the_failed_page_stays_in_the_denominators(self):
         report = self.build()
