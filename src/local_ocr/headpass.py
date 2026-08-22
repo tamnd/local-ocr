@@ -79,6 +79,33 @@ Asked about all 189 distinct fragment pages on disk, the strip answered with a
 usable head on every one and 173 of them extended the fragment. The other 16 are
 passed through: the strip read the top of the page as something with no piece of
 the fragment in it, and this module does not guess between two readings.
+
+## The body heading
+
+The fourth way is the reader answering with a line that really is printed on the
+page, in capitals, the right length, carrying a section marker, and is not the
+running head. On a page that opens a section the body's own heading is set a
+third of the way down, `§ 5. APPLICATIONS OUVERTES ET APPLICATIONS FERMEES`, and
+that is what comes back. The head is printed above it and is lost.
+
+Nothing in this module could tell the two apart, for the same reason the
+fragment defeated it: `parse_section_locator` searches the line rather than
+matching it. The full stop after the section number does tell them apart. The
+volumes print `§ 5` in the running head and `§ 5.` at the top of the body, and
+across the 4520 pages read so far 42 first lines open with a section number, a
+full stop and a title. Not one carries a page label and not one is a running
+head.
+
+So those pages are treated as having no head at all, which is what they have, and
+the strip's answer goes on the front of the reading rather than in place of the
+line. The body heading stays where it belongs, in the body. Asked about all 42
+against the live reader, 33 came back with the page's own running head and 9 came
+back NONE. All nine are `ac-x-fr`, whose section opening pages print no head, so
+nothing happens to them and nothing should.
+
+`usable` asks the same question of the strip's answer, because a strip that read
+past the top band brings back the body heading too, and the answer to that is not
+to put it on the front of the page.
 """
 
 from __future__ import annotations
@@ -153,6 +180,41 @@ NOTHING = ("none", "none.", "no running head", "n/a", "-")
 LONGEST = LONGEST_HEAD
 
 
+# The section heading printed in the body of a page that opens a section, which
+# is the one line in the volume that looks more like a running head than the
+# running head does. `§ 5. APPLICATIONS OUVERTES ET APPLICATIONS FERMEES` is in
+# capitals, is the right length, and carries a section marker that
+# `parse_section_locator` finds, so every test in this module says it is the head
+# and the reader that returned it instead of the head gets away with it.
+#
+# The full stop after the number is what separates the two. The volumes print
+# `§ 5` in the running head and `§ 5.` at the top of the body, and across the
+# 4520 pages read so far 42 first lines open with a section number, a full stop
+# and then a title. Not one of them carries a page label and not one of them is a
+# running head: they are section openings, plus three lines of a table of
+# contents with the dot leaders still attached.
+#
+# Something has to follow the stop. `§ 5.` on its own is a piece of a head with
+# the stop misread onto it, and that is a fragment, which is repaired by putting
+# the rest of the head in its place rather than by putting a head in front of it.
+HEADING = re.compile(r"^\s*§\s*\d+\s*\.\s*\S")
+
+
+def heading(line: str) -> bool:
+    """Whether a line is the body's section heading rather than the page's head.
+
+    Asked of the page's first line, so the head gets put in front of it rather
+    than nothing happening, and asked of the strip's answer, so a strip that read
+    too far down the page does not have its answer put on the front of one.
+
+    Not folded into `reads_as_head`, which is the question of whether the
+    acceptance rules will take the line. They will, and that is the defect. What
+    this says is narrower: whatever else it is, this line is not the line printed
+    across the top of the page.
+    """
+    return HEADING.match(line) is not None
+
+
 def reads_as_head(line: str) -> bool:
     """Whether a line is already a running head, and so not worth asking about.
 
@@ -208,7 +270,9 @@ def missing(text: str) -> bool:
         first = line.strip()
         if not first:
             continue
-        return not reads_as_head(first)
+        # The body heading first, because it passes the test below. See
+        # `heading`: 42 pages open with one and the head is printed above it.
+        return heading(first) or not reads_as_head(first)
     return True  # an empty reading, which has other problems
 
 
@@ -219,6 +283,10 @@ def usable(answer: str) -> str | None:
         return None
     line = lines[0].strip("`").strip()
     if not line or line.lower() in NOTHING:
+        return None
+    if heading(line):
+        # The strip read past the top band into the body of the page, and the
+        # body heading is not the head however much it looks like one.
         return None
     return line if reads_as_head(line) else None
 

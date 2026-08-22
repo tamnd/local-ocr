@@ -21,6 +21,7 @@ from local_ocr.headpass import (
     completes,
     extends,
     fragment,
+    heading,
     missing,
     usable,
 )
@@ -664,3 +665,72 @@ class TestTheFragmentRepair:
         reader = HeadPass(Volume([PIECE], head="§ 2 EXERCICES TG I.91"))
         out = TestBatchLine().run(tmp_path, reader, capsys)
         assert "put the rest of the head back on 1" in out
+
+
+OPENER = (
+    "§ 5. APPLICATIONS OUVERTES ET APPLICATIONS FERMÉES\n\n"
+    "DÉFINITION 1. Soient X et Y deux espaces topologiques.\n"
+)
+
+
+class TestTheBodyHeading:
+    """The line that looks more like a running head than the running head does.
+
+    On a page that opens a section the body's heading is set a third of the way
+    down and the reader brings that back instead of the head. It is in capitals,
+    it is the right length, and `parse_section_locator` finds a marker on it, so
+    every other test in this module says the page has its head.
+    """
+
+    def test_a_section_number_with_a_stop_and_a_title_is_the_body_heading(self) -> None:
+        for line in (
+            "§ 5. APPLICATIONS OUVERTES ET APPLICATIONS FERMÉES",
+            "§ 10. APPLICATIONS PROPRES",
+            "§ 2. Relèvement des idéaux premiers.",
+            "§ 3. Corps de représentants ...................................",
+        ):
+            assert heading(line), line
+
+    def test_a_running_head_is_not(self) -> None:
+        """The volumes print the stop in the body and leave it out of the head."""
+        for line in (
+            "TG I.30 STRUCTURES TOPOLOGIQUES § 5",
+            "§ 2 EXERCICES TG I.91",
+            "§ 4, N° 1 ALGÈBRES DE LIE NILPOTENTES 55",
+            "§ 6, No 1 ESPACES POLONAIS; ESPACES SOUSLINIENS",
+        ):
+            assert not heading(line), line
+
+    def test_a_bare_marker_with_a_stop_is_a_fragment_and_not_a_heading(self) -> None:
+        """Something has to follow the stop.
+
+        `§ 5.` on its own is a piece of a head with the stop misread onto it, and
+        the repair for that is the rest of the head in its place, not a head in
+        front of it.
+        """
+        assert not heading("§ 5.")
+        assert fragment("§ 5.")
+
+    def test_the_page_is_treated_as_having_no_head(self) -> None:
+        assert missing(OPENER)
+
+    def test_the_head_goes_in_front_and_the_heading_stays_in_the_body(self, page: Path) -> None:
+        reader = HeadPass(Volume([OPENER], head="TG I.30 STRUCTURES TOPOLOGIQUES § 5"))
+        out = asyncio.run(reader.read(page, "read this"))
+        assert out.startswith("TG I.30 STRUCTURES TOPOLOGIQUES § 5\n\n")
+        assert out.endswith(OPENER)
+        assert reader.fixed == 1 and reader.mended == 0
+
+    def test_a_page_that_prints_no_head_is_left_alone(self, page: Path) -> None:
+        """Nine of the 42 are ac-x-fr, whose section opening pages print none."""
+        reader = HeadPass(Volume([OPENER], head="NONE"))
+        assert asyncio.run(reader.read(page, "read this")) == OPENER
+        assert reader.asked == 1 and reader.fixed == 0
+
+    def test_a_strip_that_read_past_the_band_is_refused(self) -> None:
+        """The same line arriving from the other direction, which is worse.
+
+        Prepending it would give the page the body heading twice and still no
+        head.
+        """
+        assert usable("§ 5. APPLICATIONS OUVERTES ET APPLICATIONS FERMÉES") is None
