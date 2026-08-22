@@ -498,6 +498,18 @@ def parse_page_label(text: str) -> PageLabel | None:
     return PageLabel(match.group(1), match.group(2), int(match.group(3)))
 
 
+def page_label_span(text: str) -> tuple[int, int] | None:
+    """Where the page label sits in text, for a caller that has to cut it out.
+
+    parse_page_label answers what the label says. This answers where it is. The
+    head pass needs that because a label carries three or four digits of its own
+    and any comparison that runs over the whole head lets those digits stand in
+    for the part of the head the comparison is actually about.
+    """
+    match = _PAGE_LABEL.search(text)
+    return None if match is None else match.span()
+
+
 @dataclass(frozen=True)
 class SectionLocator:
     """The other kind of running head, "§ 6.5", meaning § 6 no. 5.

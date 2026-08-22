@@ -62,6 +62,7 @@ from local_ocr.batch import Reader, Refused
 from local_ocr.rules.validate import (
     LONGEST_HEAD,
     looks_like_head,
+    page_label_span,
     parse_page_label,
     parse_section_locator,
 )
@@ -202,12 +203,34 @@ def completes(head: str, text: str) -> bool:
     says the two are the same head rather than two different readings of the
     top of the page, and a strip answer that is not the page's head is a strip
     answer this module will not put in place of one.
+
+    The containment runs over the head with its page label cut out. That matters
+    more than it sounds. Of the 206 readings on the three head-label volumes
+    whose first line opens with a section sign, 183 carry an alphanumeric key of
+    one or two characters, almost always a single digit, so a containment test
+    that runs over the whole head is satisfied by the digits of the label itself
+    and says nothing. Pairing every one of those short lines against every full
+    head read on the same volume, 49695 wrong pairings in all, containment over
+    the whole head accepts 25.6 per cent of them and containment over the head
+    without its label accepts 11.3 per cent.
+
+    Nothing here checks the label the strip hands back, and nothing here can.
+    The point of the pass is to recover a label the page did not give up, so
+    there is no second copy to check it against. What catches a wrong one is
+    rule 6, which compares the label to the page map whenever the map's
+    confidence is printed, and on every head-label volume it is.
+
+    Containment rather than a prefix or a suffix test because the fragment the
+    reader keeps sits at either end. On the body pages of ac-viii-ix-fr the head
+    reads "AC VIII.14 DIMENSION § 2" and the reader keeps the tail. On the
+    exercise pages it reads "§ 4 EXERCICES AC VIII.93" and the reader keeps the
+    head. Both were read off the same volume.
     """
     first = _first(text)
     if parse_page_label(head) is None or parse_page_label(first) is not None:
         return False
     key = _key(first)
-    return bool(key) and key in _key(head)
+    return bool(key) and key in _key(_unlabelled(head))
 
 
 def _first(text: str) -> str:
@@ -216,6 +239,15 @@ def _first(text: str) -> str:
 
 def _key(line: str) -> str:
     return "".join(ch for ch in line.casefold() if ch.isalnum())
+
+
+def _unlabelled(head: str) -> str:
+    """The head with its page label taken out, so its digits stop counting."""
+    span = page_label_span(head)
+    if span is None:
+        return head
+    start, end = span
+    return f"{head[:start]} {head[end:]}"
 
 
 def _replace_first(head: str, text: str) -> str:

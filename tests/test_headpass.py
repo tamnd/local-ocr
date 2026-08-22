@@ -397,6 +397,29 @@ class TestCompletes:
         """The two came out of two different requests, so they differ in both."""
         assert completes("Anneaux  A I.109", HALF)
 
+    def test_the_label_digits_do_not_answer_for_the_head(self) -> None:
+        """The commonest half a head is one digit long, and the label has four.
+
+        On ac-viii-ix-fr the reader keeps "§ 2" and drops the rest. Run the
+        containment over the whole strip answer and the 2 in "AC VIII.32" is
+        enough to accept a head off another page, which is how a page ends up
+        carrying a section it is not in. The label comes out first.
+        """
+        page = "§ 2\n\nPROPOSITION 7. Soit A un anneau.\n"
+        assert completes("AC VIII.14  DIMENSION  § 2", page)
+        assert not completes("AC VIII.32  DIMENSION  § 3", page)
+
+    def test_the_kept_fragment_sits_at_either_end(self) -> None:
+        """Body pages print the label first, exercise pages print it last.
+
+        Both lines below were read off ac-viii-ix-fr, which is why the guard
+        cannot be a prefix test or a suffix test.
+        """
+        body = "§ 2\n\nSoit A un anneau noetherien.\n"
+        exercises = "§ 4\n\n1) Soit k un corps.\n"
+        assert completes("AC VIII.14  DIMENSION  § 2", body)
+        assert completes("§ 4  EXERCICES  AC VIII.93", exercises)
+
 
 class Counting(Stub):
     """A reader that reports what each call cost, the way a vLLM server does."""
