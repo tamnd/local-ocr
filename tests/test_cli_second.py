@@ -17,7 +17,16 @@ import pytest
 from PIL import Image
 
 from local_ocr.batch import Options
-from local_ocr.cli import _budget, _reader, _sidecars, main, mine_cmd, ocr_batch
+from local_ocr.cli import (
+    _budget,
+    _head,
+    _head_label,
+    _reader,
+    _sidecars,
+    main,
+    mine_cmd,
+    ocr_batch,
+)
 from local_ocr.second import SecondPass
 from local_ocr.sidecar import SUFFIX, Record
 
@@ -365,3 +374,40 @@ class TestRefereePrompt:
         asyncio.run(pass_.read(image, "the long fleet prompt"))
         assert first.asked == [("0027.png", "the long fleet prompt")]
         assert second.asked == [("0027.png", "Free OCR.")]
+
+
+class TestTheVolumeIsTold:
+    """The grammar of a volume is known before the images are pushed.
+
+    See the head pass module note: the guess learns a fact about a volume from
+    fifteen contiguous pages of it. The Go side reads the grammar out of the
+    corpus manifest and the batch is one volume, so it can just say.
+    """
+
+    def test_a_volume_that_prints_a_label_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LOCAL_OCR_HEAD_LABEL", "1")
+        assert _head_label() is True
+
+    def test_a_volume_that_prints_none_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LOCAL_OCR_HEAD_LABEL", "0")
+        assert _head_label() is False
+
+    def test_saying_nothing_leaves_the_guess_alone(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LOCAL_OCR_HEAD_LABEL", raising=False)
+        assert _head_label() is None
+
+    def test_a_typo_leaves_the_guess_alone(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """This arrives through a command line built by another program."""
+        monkeypatch.setenv("LOCAL_OCR_HEAD_LABEL", "yes")
+        assert _head_label() is None
+
+    def test_it_reaches_the_wrapper(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from local_ocr.headpass import HeadPass
+
+        monkeypatch.setenv("LOCAL_OCR_HEAD_LABEL", "1")
+        monkeypatch.delenv("LOCAL_OCR_HEAD_PASS", raising=False)
+        monkeypatch.delenv("LOCAL_OCR_REFEREE", raising=False)
+        got = _head(object())
+        assert isinstance(got, HeadPass)
+        assert got.head_label is True
+        assert got.wants_label(), "told, so nothing has to be learned first"

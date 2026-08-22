@@ -141,7 +141,28 @@ def _head(reader: Reader) -> Reader:
     # means here rather than an option somebody has to know about. The
     # environment variable is for measuring the pass, which is the only reason
     # to turn it off.
-    return HeadPass(reader)
+    return HeadPass(reader, head_label=_head_label())
+
+
+def _head_label() -> bool | None:
+    """Whether this batch's volume prints a page label, if the caller said so.
+
+    The corpus records the grammar of every volume and the batch is one volume,
+    so the fact is known on the Go side before the images are pushed and is
+    worth passing rather than making this end guess it from fifteen pages.
+    Unset means guess, which is what every run did before this existed and what
+    a run started by hand still does.
+
+    Anything else unset falls through to the guess rather than failing the
+    batch, because this arrives through a command line built by another program
+    and a typo there should not cost a night of reading.
+    """
+    raw = os.environ.get("LOCAL_OCR_HEAD_LABEL", "").strip()
+    if raw == "1":
+        return True
+    if raw == "0":
+        return False
+    return None
 
 
 def _entry(name: str) -> serving.Model | None:
