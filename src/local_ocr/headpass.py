@@ -106,6 +106,39 @@ nothing happens to them and nothing should.
 `usable` asks the same question of the strip's answer, because a strip that read
 past the top band brings back the body heading too, and the answer to that is not
 to put it on the front of the page.
+
+## The volume
+
+Three of the four repairs above work without asking what volume the page is
+from, and that was not the plan, it was the only way past a rule that does not
+hold. The volume rule learns from fifteen contiguous pages of one volume, spends
+the first eight refusing to answer, and then answers from a sample nobody would
+accept. `completes` is the one repair that cannot route around it, because
+whether a head with a title and no label is a defect really does depend on the
+volume, and on `top-v-x-fr` it depends on the page: `CHAPITRE V` and `NOTE
+HISTORIQUE` print no label and are right, `§ 2 MESURE DES GRANDEURS` prints one
+and lost it.
+
+So the rule is not guessed when it can be told. `head_label` on the wrapper
+carries what the caller knows, and the caller does know: the corpus records the
+grammar of every volume and a batch is one volume. Unset means guess, which is
+what a run started by hand still does.
+
+The guess itself is fixed as far as it can be from here, by taking the vote away
+from the pages that lost their head. A reading with no head, a fragment, or the
+body's section heading is not evidence about what a volume prints across the top
+of a page. Letting those pages vote is what pins the share at 0.5625 on the
+exercise batches: the loss runs down one side of the page, so the pages needing
+the second look are the votes keeping it shut. Over the 118 batches of a
+`head-label` volume on disk, abstention opens 19 that stay shut today and closes
+none, and the pages asked about go from 22 to 30 of the 280 that want it.
+
+That is still 30 of 280, which is the measurement that says the guess is not
+worth improving further. Told rather than guessed, all 280 are asked. Guessing
+open instead was measured too and rejected: it asks about 1643 pages on the
+volumes that print no label, and on a sample of 40 of them the strip changed
+nothing at all, because `completes` wants a label in the answer and those
+volumes print none. Zero harm and 1643 crops is not a trade, it is a waste.
 """
 
 from __future__ import annotations
@@ -478,6 +511,12 @@ class HeadPass:
     inner: Reader
     fraction: float = BAND
     prompt: str = PROMPT
+    head_label: bool | None = None
+    """Whether this batch's volume prints a page label, when the caller knows.
+
+    None means guess, which is what happens when nobody said. See `wants_label`.
+    """
+
     asked: int = field(default=0, init=False)
     fixed: int = field(default=0, init=False)
     completed: int = field(default=0, init=False)
@@ -499,22 +538,42 @@ class HeadPass:
     """
 
     def wants_label(self) -> bool:
-        """Whether this batch has shown that its volume prints a page label."""
+        """Whether the volume this batch belongs to prints a page label.
+
+        Told when the caller knows, and guessed from the batch when it does not.
+        The guess is the weakest thing in this module and the module note says
+        why: it is a fact about a volume being learned from fifteen contiguous
+        pages of it, so it spends the first eight of them refusing to answer and
+        the rest answering from a sample nobody would accept.
+
+        The pages that lost their head do not vote. A reading with no head, or
+        with a piece of one, or with the body's section heading on the front, is
+        not evidence about what the volume prints; it is evidence that the
+        reader dropped it. Letting those pages vote is what pins the share at
+        0.5625 on the exercise batches, where the loss is systematic down one
+        side of the page, so the pages that need the second look are the votes
+        keeping it shut. Counted over the 118 batches of a `head-label` volume
+        on disk, abstention opens 19 that stay shut today and closes none.
+        """
+        if self.head_label is not None:
+            return self.head_label
         return self.seen >= LEARN and self.labels >= self.seen * SHARE
 
     async def read(self, image: Path, prompt: str) -> str:
         text = await self.inner.read(image, prompt)
-        # Counted before the decision, so the page being judged is part of the
-        # evidence about its own volume. A label-less page is a vote against the
-        # volume printing labels and it should be allowed to cast it.
-        self.seen += 1
-        if labelled(text):
-            self.labels += 1
         gone = missing(text)
         # A fragment is asked about whatever the volume has shown, because it is
         # not a head on any volume. See the module note: the volume rule cannot
         # reach these pages and on the batches they fall in it never opens.
         piece = fragment(_first(text))
+        # Counted after the two tests above and before the decision, so the page
+        # being judged is part of the evidence about its own volume but only if
+        # it is evidence. See `wants_label`: a reading that lost its head tells
+        # you nothing about what the volume prints across the top of a page.
+        if not gone and not piece:
+            self.seen += 1
+            if labelled(text):
+                self.labels += 1
         if not gone and not piece and not (self.wants_label() and not labelled(text)):
             return text
         self.asked += 1

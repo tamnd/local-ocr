@@ -734,3 +734,75 @@ class TestTheBodyHeading:
         head.
         """
         assert usable("§ 5. APPLICATIONS OUVERTES ET APPLICATIONS FERMÉES") is None
+
+
+class TestTheVolume:
+    """Who decides whether the volume prints a page label, and on what evidence.
+
+    See the module note. The guess learns a fact about a volume from fifteen
+    contiguous pages of it, which is the weakest thing in this module, so it is
+    told when the caller knows and repaired as far as it can be when it does not.
+    """
+
+    def walk(self, reader: HeadPass, page: Path, count: int) -> list[str]:
+        return [asyncio.run(reader.read(page, "read this")) for _ in range(count)]
+
+    def test_being_told_needs_no_pages_at_all(self, page: Path) -> None:
+        """The first page of a batch is repaired, not the ninth."""
+        inner = Volume([HALF])
+        reader = HeadPass(inner, head_label=True)
+        assert reader.wants_label(), "told, so there is nothing to learn"
+        out = self.walk(reader, page, 1)[-1]
+        assert out.startswith("ANNEAUX A I.109\n")
+        assert reader.completed == 1
+        assert inner.strips == 1
+
+    def test_being_told_no_shuts_the_gate_whatever_the_pages_show(self, page: Path) -> None:
+        reader = HeadPass(Volume([WHOLE] * 12), head_label=False)
+        self.walk(reader, page, 12)
+        assert not reader.wants_label()
+        assert reader.asked == 0
+
+    def test_not_being_told_is_the_guess_it_always_was(self, page: Path) -> None:
+        reader = HeadPass(Volume([WHOLE] * 8))
+        assert reader.head_label is None
+        self.walk(reader, page, 8)
+        assert reader.wants_label()
+
+    def test_a_page_with_no_head_does_not_vote(self, page: Path) -> None:
+        """Eight labelled pages and four headless ones is still eight votes."""
+        reader = HeadPass(Volume([WHOLE] * 8 + [BARE] * 4))
+        self.walk(reader, page, 12)
+        assert reader.seen == 8, "the four headless pages abstained"
+        assert reader.labels == 8
+        assert reader.wants_label()
+
+    def test_a_fragment_does_not_vote(self, page: Path) -> None:
+        """The exercise batches, where the loss runs down one side of the page.
+
+        Nine labelled pages against seven fragments is 0.5625, which is under
+        the threshold, and the pages holding the gate shut are exactly the ones
+        that need it open.
+        """
+        reader = HeadPass(Volume([WHOLE] * 9 + ["§ 2\n\nbody\n"] * 7))
+        self.walk(reader, page, 16)
+        assert reader.seen == 9, "the seven fragments abstained"
+        assert reader.wants_label(), "0.5625 of sixteen, and 1.0 of nine"
+
+    def test_a_body_heading_does_not_vote(self, page: Path) -> None:
+        reader = HeadPass(Volume([WHOLE] * 8 + [OPENER] * 4))
+        self.walk(reader, page, 12)
+        assert reader.seen == 8
+        assert reader.wants_label()
+
+    def test_a_page_that_lost_only_its_label_still_votes(self, page: Path) -> None:
+        """It has a head, so it is evidence, and it votes against the label.
+
+        Abstention is for readings that lost the head, not for readings that
+        disagree. A volume really can print a title and no label and this is how
+        it says so.
+        """
+        reader = HeadPass(Volume([HALF] * 12))
+        self.walk(reader, page, 12)
+        assert reader.seen == 12 and reader.labels == 0
+        assert not reader.wants_label()
