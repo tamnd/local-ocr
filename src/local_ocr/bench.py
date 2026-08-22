@@ -137,6 +137,15 @@ The order is the order to run them in and not only the order to read them in.
 `sglang` is second because it is the one arm that can fail to run at all, and
 finding that out after eight other runs have already taken the card is finding
 it out too late to do anything else with the window.
+
+On the M4 run it failed exactly that way and the report said so instead of
+inventing a number, which is the behaviour this order exists to get. SGLang was
+then installed into its own venv and measured on its own against the same set,
+the same prompt and the same harness on the same afternoon: 160 accepted of 200
+at 1133 accepted pages an hour and 80.0 per cent acceptance, against vLLM at 174
+of 200, 1249 and 87.0 per cent. Two engines cannot share a venv here because
+they pin different torch builds, so an arm that names a binary is an arm that
+depends on the serving script knowing where that binary lives.
 """
 
 

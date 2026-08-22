@@ -73,6 +73,20 @@ page, and 3.1 % of the small type set on its side.
 #   at temperature zero. The same page on the same server with the flag removed
 #   came back correct, in 793 tokens, matching the publisher's own text layer
 #   almost word for word. An FP8 model does not imply an FP8 KV cache.
+#   The M4 sweep put a number on that page. With the flag on, golden-dev goes
+#   from 174 accepted of 200 to zero: 81 pages written, 119 refused because the
+#   server returned an empty message or the answer ran to the token limit. The
+#   flag also moves the attention backend, which is worth knowing before anybody
+#   tries it again for a different reason. Every other arm logs FLASH_ATTN out of
+#   FLASH_ATTN, FLASHINFER, TRITON_ATTN and FLEX_ATTENTION; asking for an FP8 KV
+#   cache leaves FLASHINFER and TRITON_ATTN on the list and FLASH_ATTN is gone.
+# The rest of the arguments below were guesses when they were written and are
+#   measurements now. On golden-dev at 300 dpi, in accepted pages an hour: 16
+#   lanes 1247 against 700 at four and 1241 at thirty two, FP8 weights 1249
+#   against 599 for BF16 at the same window and the same acceptance, 300 dpi
+#   1249 against 486 at 600, vLLM 1249 against 1133 for SGLang 0.5.18, and a
+#   450 W board 1249 against 1208 at 350 W. Nothing in the sweep moved this
+#   list, which is the result rather than the absence of one.
 args = [
   "--max-model-len", "32768",
   "--max-num-seqs", "16",
@@ -158,6 +172,23 @@ gives max_position_embeddings 8192 and vLLM refuses to start above it. The note
 below says the optical compression makes 8192 enough, and that is true of a
 French Bourbaki page and false of a Russian magazine page, because Cyrillic
 costs far more tokens per character than the Latin the claim was measured on.
+
+The referee on Bourbaki, chosen in M4. A referee has to be from a different base
+family than the reader or a disagreement means less than it looks, and this is a
+DeepSeek 3B mixture of experts behind the DeepEncoder against Qwen2.5-VL 7B for
+reader-a. reader-b and reader-e are both Qwen derived and share the reader's
+blind spots on exactly the pages this corpus is hardest on, which left reader-c
+and this one. On golden-dev with the head pass off, each on the prompt it can
+take: this reads 199 of 200 in 140 seconds at 9.01 % prose CER and 15.70 % whole
+page, against the reader's own pass at 200 of 200 in 501 seconds, 7.55 % and
+15.60 %. reader-c reads 100 of 200 in 620 seconds at 65.44 %.
+
+It is measured with the head pass off and on its own four word prompt, and that
+is not a convenience. Under the common short prompt with the head pass on it
+scores 133 of 200 and 72.36 % prose CER, because the head pass is a second call
+carrying a paragraph and this model takes four words and nothing longer, so 67
+of its pages were rejected for handing the instructions back. A referee is asked
+for a second reading of the body; the running head is the reader's job.
 """
 # --max-model-len 8192 and not 16384 like the rest. This model's config.json
 #   gives max_position_embeddings 8192, and vLLM refuses to start above it
@@ -165,6 +196,18 @@ costs far more tokens per character than the Latin the claim was measured on.
 #   compression is what makes 8192 enough: a page costs 64 to 400 vision tokens
 #   here against several thousand for reader-a, so the window holds the prompt,
 #   the page and a long answer with room to spare.
+# --gpu-memory-utilization 0.80 is the share with the card to itself. Sitting
+#   beside the reader it is 0.93, and that number is not a typo. vLLM reads this
+#   flag as a fraction of the whole card and not of what is free on it, so the
+#   second server started has to be given a figure that already contains the
+#   first server's footprint. At 0.33, which is roughly what is actually free,
+#   it fails with "No available memory for the cache blocks", and the reason is
+#   that 0.33 of the card is less than what the reader is already holding.
+#   Measured in M4: reader-a at 0.68 and a 32768 window takes 12754 MiB with
+#   1.81 GiB of KV cache, this at 0.93 brings the card to 24008 MiB of 24564,
+#   and both answer. §01's table gives the reader 0.62 when it shares, and at
+#   0.62 it does not start at all: a 32768 window needs 1.75 GiB of KV cache and
+#   0.62 leaves 0.37 GiB.
 args = [
   "--max-model-len", "8192",
   "--max-num-seqs", "16",
