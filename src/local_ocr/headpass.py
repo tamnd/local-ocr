@@ -212,6 +212,14 @@ from local_ocr.rules.validate import (
 # that instead.
 BAND = 0.12
 
+# One end of that strip, as a fraction of its width. See `EDGE_PROMPT` for why
+# there is a third crop at all. Thirty per cent because the label sits hard
+# against the margin and the widest one measured, `A III.166`, takes eleven per
+# cent of the line; the rest is slack for a page that sits crooked. Measured at
+# 25, 34 and 50 per cent on the page this was found on, all three read the label
+# and read it identically, so the number is not delicate.
+EDGE = 0.30
+
 # The page number is called out because the first version of this prompt did
 # not call it out and the model dropped it on almost every page that prints
 # one. Asked for "the running head, exactly as printed" it answered TABLE DES
@@ -251,6 +259,39 @@ PROMPT = (
     "and not with the middle part on its own. "
     "Reply NONE if the strip holds no running head."
 )
+
+# The strip prompt names both ends of the line and gives an example of each
+# shape, and on the pages where the label is printed at the left end that is
+# enough. On the pages where it is printed at the right end it is not, and no
+# rewording of it was going to be, because the reader is not failing to see the
+# label. It is failing to carry it across the gap.
+#
+# `alg-i-iii-fr` page 592 prints `NOTE HISTORIQUE` centred with `A III.205` hard
+# against the right margin, and the strip comes back `NOTE HISTORIQUE` three
+# times out of three. Crop the right thirty per cent of that same strip and ask
+# again and the answer is `A III.205`, six times out of six at three different
+# crop widths. The label is legible, it is in the image the reader was already
+# given, and what is lost is the second half of a line whose first half is a
+# title in capitals. So the third crop asks for it on its own, where there is no
+# title in front of it to stop at.
+#
+# Deliberately not a rewrite of the strip prompt. Nothing here replaces a head
+# the strip read; it puts back a label the strip left behind, and it only runs
+# on a volume that prints one and a head that has none.
+EDGE_PROMPT = (
+    "This image is one end of the strip across the very top of a printed page. "
+    "Reply with whatever is printed in it, exactly as printed, on one line, and nothing else. "
+    "It is usually a page number or a page reference such as A V.113. "
+    "Reply NONE if nothing is printed in it."
+)
+
+# Which end to crop, and in which order. Right first because that is the end the
+# label is lost from: over the 17 pages this was built on, all 17 lost a label
+# printed at the right and none lost one printed at the left, which is what a
+# reader that works left to right and stops at the end of the title would do.
+# The left end is still tried, because one volume behaving one way is not a rule
+# and the second crop only ever runs on a page the first one could not mend.
+ENDS = ("right", "left")
 
 # What a reader says when there is nothing up there. Kept small, because the
 # test below is what a head has to look like and this only keeps an obvious
@@ -617,6 +658,60 @@ def band(image: Path, out: Path, fraction: float = BAND) -> Path:
     return out
 
 
+def edge(strip: Path, out: Path, side: str, fraction: float = EDGE) -> Path:
+    """One end of the strip, written as a PNG.
+
+    Off the strip and not off the page, so the second look and the third one are
+    reading the same pixels. A crop taken from the page again would be a third
+    rasterisation nobody would think to check for agreement with the other two.
+    """
+    from PIL import Image
+
+    with Image.open(strip) as band_image:
+        width = max(1, int(band_image.width * fraction))
+        box = (
+            (0, 0, width, band_image.height)
+            if side == "left"
+            else (band_image.width - width, 0, band_image.width, band_image.height)
+        )
+        piece = band_image.crop(box)
+        buffer = io.BytesIO()
+        piece.save(buffer, format="PNG")
+    out.write_bytes(buffer.getvalue())
+    return out
+
+
+def edge_label(answer: str) -> str | None:
+    """The page label out of an end crop's answer, or None.
+
+    The span and not the answer. A crop wide enough to be safe on a crooked page
+    is wide enough to catch the first word of the title with it, and the left end
+    of `alg-i-iii-fr` page 553 comes back `A III.166 ALGÈBRE`. Splicing that onto
+    a head gives the head a second copy of a word it already has.
+
+    The first line and not the whole answer, for the same reason `usable` takes
+    the first line: an end crop that reads down into the body comes back with
+    several lines of it, and a page label found on the fourth of them is a
+    citation in the text rather than the folio.
+
+    This is the whole guard against inventing one. An end crop answers with
+    whatever it can see, so on a page that prints no label the answer is a piece
+    of the body or a roman folio, and neither parses. Measured over 23 control
+    pages including six of front matter, where the crops returned `ix`, `xii`,
+    `AKI`, `N.B.`, `traité` and NONE, nothing parsed and nothing was spliced.
+    """
+    span = page_label_span(_first(answer))
+    if span is None:
+        return None
+    start, end = span
+    return _first(answer)[start:end].strip()
+
+
+def spliced(head: str, label: str, side: str) -> str:
+    """The head with the label put back on the end it was printed at."""
+    return f"{label} {head}" if side == "left" else f"{head} {label}"
+
+
 @dataclass
 class HeadPass:
     """A reader wrapped in the second look.
@@ -654,6 +749,16 @@ class HeadPass:
 
     mended: int = field(default=0, init=False)
     """Pages that came back with a piece of the head. See the module note."""
+
+    edged: int = field(default=0, init=False)
+    """Pages whose label was read off one end of the strip. See `EDGE_PROMPT`.
+
+    Counted where the label is recovered and not where it is used, so it counts
+    the third crop working rather than the repair that follows it landing. The
+    two differ: a head mended this way still has to satisfy `completes` or
+    `_same` like any other, and a page that fails those is a page the third crop
+    read a label for and the module then declined to use.
+    """
 
     seen: int = field(default=0, init=False)
     labels: int = field(default=0, init=False)
@@ -712,6 +817,7 @@ class HeadPass:
                 strip = band(image, Path(scratch) / "head.png", self.fraction)
                 answer = await self.inner.read(strip, self.prompt)
                 self._keep(image, strip)
+                answer = await self._relabel(answer, strip, Path(scratch), image)
             except Exception:
                 # The page itself was read. A failed second look leaves a page
                 # without a head, which the acceptance rules will reject and
@@ -760,10 +866,44 @@ class HeadPass:
         self.fixed += 1
         return f"{head}\n\n{text.lstrip()}"
 
+    async def _relabel(self, answer: str, strip: Path, scratch: Path, image: Path) -> str:
+        """The strip's answer with the page label put back on it, if it lost one.
+
+        See `EDGE_PROMPT`. Only on a volume that prints a label, only when the
+        strip handed back a head that has none, and only for as long as it takes
+        one end to answer: the right end mends every page this was built on, so
+        the left crop is a second request that in practice is never made.
+
+        It hands back the head on its own rather than the whole answer, which is
+        what `usable` would have taken from it anyway. Nothing downstream
+        changes: a mended head still has to satisfy `completes` or `extends` or
+        `_same` like any other, and this only gives those tests the label they
+        were asking for.
+        """
+        if not self.wants_label():
+            return answer
+        head = usable(answer, self.grammar)
+        if head is None or parse_page_label(head) is not None:
+            return answer
+        for side in ENDS:
+            piece = edge(strip, scratch / f"{side}.png", side, EDGE)
+            said = await self.inner.read(piece, EDGE_PROMPT)
+            self._keep(image, piece)
+            label = edge_label(said)
+            if label is not None:
+                self.edged += 1
+                return spliced(head, label, side)
+        return answer
+
     def _keep(self, image: Path, strip: Path) -> None:
+        # Added rather than assigned. A page can cost more than one crop now,
+        # and a third crop that overwrote the second one's count would report
+        # the cheaper of the two as the whole bill.
         got = self._ask(strip)
-        if got is not None:
-            self._strip[image] = got
+        if got is None:
+            return
+        had = self._strip.get(image)
+        self._strip[image] = got if had is None else (had[0] + got[0], had[1] + got[1])
 
     def _ask(self, image: Path) -> tuple[int, int] | None:
         ask = getattr(self.inner, "usage", None)

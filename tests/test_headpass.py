@@ -15,16 +15,20 @@ import pytest
 
 from local_ocr.batch import Refused
 from local_ocr.headpass import (
+    EDGE_PROMPT,
     EXAMPLES,
     PROMPT,
     HeadPass,
     band,
     completes,
     echoed,
+    edge,
+    edge_label,
     extends,
     fragment,
     heading,
     missing,
+    spliced,
     usable,
 )
 
@@ -346,12 +350,17 @@ class Volume:
     answers the same head every time, with the label on it.
     """
 
-    def __init__(self, pages: list[str], head: str = "ANNEAUX A I.109") -> None:
+    def __init__(self, pages: list[str], head: str = "ANNEAUX A I.109", ends: str = "NONE") -> None:
         self.pages = list(pages)
         self.head = head
+        self.ends = ends
         self.strips = 0
+        self.edges = 0
 
     async def read(self, image: Path, prompt: str) -> str:
+        if prompt == EDGE_PROMPT:
+            self.edges += 1
+            return self.ends
         if prompt == PROMPT:
             self.strips += 1
             return self.head
@@ -933,3 +942,179 @@ class TestThePromptComingBack:
         """No head is a better answer than another volume's head."""
         assert usable("ALGEBRAIC STRUCTURES Ch. I") is None
         assert usable("N EXTENSIONS GALOISIENNES A V.") is None
+
+
+class TestTheLabelAtTheRightEnd:
+    """The label the strip can see and will not carry across the gap.
+
+    `alg-i-iii-fr` page 592 prints `NOTE HISTORIQUE` centred with `A III.205`
+    hard against the right margin. The page reading opens with body text, the
+    strip is asked for and comes back `NOTE HISTORIQUE`, three times out of
+    three, and a head with no label is a page rule 4 rejects. Crop the right
+    thirty per cent of that same strip and the answer is `A III.205`, six times
+    out of six at three crop widths. The label was never illegible. It is the
+    second half of a line whose first half is a title in capitals, and the
+    reader stops at the end of the title.
+
+    Nineteen pages across three volumes were dead on this, all with three
+    attempts spent. Seventeen of them lose a label printed at the right end and
+    the third crop reads every one of them correctly, checked against the
+    printed page. The other two already carried their label in the strip and
+    failed the day's run for other reasons, and the third crop does not fire on
+    them.
+    """
+
+    def walk(self, reader: HeadPass, page: Path, count: int) -> list[str]:
+        return [asyncio.run(reader.read(page, "read this")) for _ in range(count)]
+
+    def test_the_label_is_read_off_the_right_end_and_put_back(self, page: Path) -> None:
+        """The failure this class exists for, end to end."""
+        inner = Volume([WHOLE] * 8 + [HALF], head="ANNEAUX", ends="A I.109")
+        reader = HeadPass(inner)
+        out = self.walk(reader, page, 9)[-1]
+        assert out.startswith("ANNEAUX A I.109\n")
+        assert reader.edged == 1
+        assert reader.completed == 1
+        assert inner.edges == 1, "the right end answered, so the left is never asked"
+
+    def test_a_page_with_no_head_at_all_is_mended_the_same_way(self, page: Path) -> None:
+        """Which is the shape the nineteen dead pages actually arrived in.
+
+        The reader dropped the head off the page entirely, so this goes down the
+        prepending path rather than the completing one, and the head being
+        prepended is the one the third crop mended.
+        """
+        reader = HeadPass(Volume([WHOLE] * 8 + [BARE], head="ANNEAUX", ends="A I.109"))
+        out = self.walk(reader, page, 9)[-1]
+        assert out.startswith("ANNEAUX A I.109\n")
+        assert reader.edged == 1
+        assert reader.fixed == 1
+
+    def test_the_left_end_is_tried_when_the_right_one_is_blank(self, page: Path) -> None:
+        """One volume behaving one way is not a rule about where a label prints."""
+
+        class Sided(Volume):
+            async def read(self, image: Path, prompt: str) -> str:
+                if prompt == EDGE_PROMPT:
+                    self.edges += 1
+                    return "NONE" if self.edges == 1 else "A I.109"
+                return await super().read(image, prompt)
+
+        inner = Sided([WHOLE] * 8 + [HALF], head="ANNEAUX")
+        reader = HeadPass(inner)
+        out = self.walk(reader, page, 9)[-1]
+        assert out.startswith("A I.109 ANNEAUX\n"), "put back at the end it was read from"
+        assert inner.edges == 2
+
+    def test_a_strip_that_kept_its_label_is_not_cropped_again(self, page: Path) -> None:
+        """Most pages, and the third crop is a request that costs something."""
+        inner = Volume([WHOLE] * 8 + [BARE], ends="A IV.7")
+        reader = HeadPass(inner)
+        self.walk(reader, page, 9)
+        assert inner.edges == 0
+        assert reader.edged == 0
+
+    def test_a_volume_that_prints_no_label_is_never_cropped(self, page: Path) -> None:
+        """`foot-number` volumes print a title across the top and nothing else,
+        so an end crop there can only find body text or a folio nobody wants."""
+        inner = Volume([HALF] * 12, head="ANNEAUX", ends="A I.109")
+        reader = HeadPass(inner)
+        self.walk(reader, page, 12)
+        assert not reader.wants_label()
+        assert inner.edges == 0
+
+    def test_an_end_that_answers_prose_puts_nothing_back(self, page: Path) -> None:
+        """Which is what the left end of all seventeen pages answered.
+
+        An end crop transcribes whatever it can see rather than refusing, so on
+        those pages it came back with the first inch of the body: `manière fort
+        élégant`, `valable pour y et z`, `Dénominateur: I, p. 113`. None of them
+        parses as a page label and none of them was spliced onto anything.
+        """
+        inner = Volume([WHOLE] * 8 + [HALF], head="ANNEAUX", ends="manière fort élégant")
+        reader = HeadPass(inner)
+        assert self.walk(reader, page, 9)[-1] == HALF
+        assert reader.edged == 0
+        assert inner.edges == 2, "both ends asked, neither answered a label"
+
+    def test_a_roman_folio_is_not_a_page_label(self, page: Path) -> None:
+        """The front matter prints `ix` and `xii` at the end of the strip and a
+        page label on a head-label volume is `A III.205`, not a folio."""
+        for folio in ("ix", "xii", "NONE", "AKI", "N.B.", "traité"):
+            assert edge_label(folio) is None, folio
+
+    def test_only_the_label_is_taken_and_not_the_answer_around_it(self) -> None:
+        """A crop wide enough for a crooked page catches the first word of the
+        title with it. `alg-i-iii-fr` page 553 answers `A III.166 ALGÈBRE`."""
+        assert edge_label("A III.166 ALGÈBRE") == "A III.166"
+        assert edge_label("A V.169") == "A V.169"
+        assert edge_label("TG IV.73") == "TG IV.73"
+
+    def test_a_label_further_down_the_answer_is_a_citation(self) -> None:
+        """An end crop that reads into the body comes back with several lines of
+        it, and the folio is on the first one or it is not the folio."""
+        assert edge_label("Orbite: I, p. 54.\nA III.240") is None
+        assert edge_label("A III.222\n\nθ_T, θ_S : III, p. 151.") == "A III.222"
+
+    def test_an_index_citation_is_not_a_label(self) -> None:
+        """The index pages are half of the dead set and every line on them cites
+        a chapter and a page, which is not the form a page label takes."""
+        # The typographic apostrophe is what the volume prints and what the
+        # reader hands back, so the line under test carries it.
+        assert edge_label("Multidegré dans l’algèbre: I, p. 87.") is None  # noqa: RUF001
+        assert edge_label("Dénominateur: I, p. 113 (K, ε)-dérivation de d") is None
+
+    def test_the_splice_puts_it_at_the_end_it_came_from(self) -> None:
+        assert spliced("NOTE HISTORIQUE", "A III.205", "right") == "NOTE HISTORIQUE A III.205"
+        assert spliced("ANNEAUX", "A I.109", "left") == "A I.109 ANNEAUX"
+
+    def test_the_crop_is_taken_off_the_strip_and_not_the_page(self, tmp_path: Path) -> None:
+        """So the second look and the third are reading the same pixels."""
+        from PIL import Image
+
+        source = tmp_path / "strip.png"
+        Image.new("L", (1000, 120), color=255).save(source)
+        right = edge(source, tmp_path / "r.png", "right", 0.3)
+        left = edge(source, tmp_path / "l.png", "left", 0.3)
+        with Image.open(right) as image:
+            assert image.size == (300, 120)
+        with Image.open(left) as image:
+            assert image.size == (300, 120)
+
+    def test_a_crop_that_will_not_open_leaves_the_reading_alone(self, page: Path) -> None:
+        """The guard around the whole second look covers the third one too. A
+        page that was read is worth more than a label it did not give up."""
+
+        class Broken(Volume):
+            async def read(self, image: Path, prompt: str) -> str:
+                if prompt == EDGE_PROMPT:
+                    raise OSError("cannot identify image file")
+                return await super().read(image, prompt)
+
+        reader = HeadPass(Broken([WHOLE] * 8 + [HALF], head="ANNEAUX"))
+        assert self.walk(reader, page, 9)[-1] == HALF
+        assert reader.edged == 0
+
+    def test_what_it_costs_is_counted_against_the_page(self, page: Path) -> None:
+        """Three crops now, and a third that overwrote the second one's count
+        would report the cheaper of the two as the whole bill."""
+
+        class Measuring(Volume):
+            def usage(self, image: Path) -> tuple[int, int]:
+                return (10, 3)
+
+        inner = Measuring([WHOLE] * 8 + [HALF], head="ANNEAUX", ends="A I.109")
+        reader = HeadPass(inner)
+        self.walk(reader, page, 9)
+        assert reader.usage(page) == (30, 9), "the page, the strip, and the end that answered"
+
+    def test_the_end_is_left_out_of_the_bill_when_it_is_never_asked(self, page: Path) -> None:
+        """Which is the ordinary page, so the ordinary page costs what it did."""
+
+        class Measuring(Volume):
+            def usage(self, image: Path) -> tuple[int, int]:
+                return (10, 3)
+
+        reader = HeadPass(Measuring([WHOLE] * 8 + [BARE], ends="A IV.7"))
+        self.walk(reader, page, 9)
+        assert reader.usage(page) == (20, 6), "the page and the strip"
