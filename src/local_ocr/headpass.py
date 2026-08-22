@@ -107,6 +107,29 @@ nothing happens to them and nothing should.
 past the top band brings back the body heading too, and the answer to that is not
 to put it on the front of the page.
 
+## The other body heading
+
+The English volumes number their subsections in the American style, with a bare
+number and a full stop and no section sign, and the paragraph above does not see
+those at all. `5. IMAGE OF A SUMMABLE FAMILY UNDER A CONTINUOUS HOMOMORPHISM` is
+printed a third of the way down `top-i-iv` page 273 and went into the corpus as
+that page's running head. Deduped over every reading on disk, 196 first lines are
+this shape and not one of them was recognised as carrying a page label.
+
+It cannot be fixed by making the section sign optional, because 159 of the 196
+are the Historical Note, which prints its numbered section title across the top
+of the page and is right to: `1. FOUNDATIONS OF MATHEMATICS; LOGIC; SET THEORY.
+3` is a head on a real page. Widening the pattern for everybody would take the
+head off 159 pages to fix 37.
+
+The manifest separates them. `hist` is `head-number` and prints its number at the
+top; `top-i-iv`, `alg-i-iii` and `ens-i-iv` are `foot-number` and print it at the
+bottom, and the titles those volumes set across the top carry no number in front
+of them. So the volume decides, and `grammar` on the wrapper is how it is told,
+by the same route and for the same reason as `head_label`. A volume the manifest
+has not classified is left as it was, which leaves 11 pages of `ac-i-vii` and
+`top-v-x` unfixed until the manifest says what they print.
+
 ## The volume
 
 Three of the four repairs above work without asking what volume the page is
@@ -261,8 +284,30 @@ LONGEST = LONGEST_HEAD
 # the rest of the head in its place rather than by putting a head in front of it.
 HEADING = re.compile(r"^\s*§\s*\d+\s*\.\s*\S")
 
+# The same heading on a volume that numbers its subsections in the American
+# style, with a bare number and a full stop and no section sign. `5. IMAGE OF A
+# SUMMABLE FAMILY UNDER A CONTINUOUS HOMOMORPHISM` on `top-i-iv` page 273 is
+# printed a third of the way down the body and every test in this module said it
+# was the head.
+#
+# A folio does not match it. `18 ALGEBRAIC STRUCTURES Ch. I` opens with a number
+# and no stop after it, and the stop with something after it is what this asks
+# for. Deduped over every reading on disk, 196 first lines match it and are not
+# caught by `HEADING`, and not one of the 196 was recognised as carrying a page
+# label.
+NUMBERED = re.compile(r"^\s*\d+\s*\.\s+\S")
 
-def heading(line: str) -> bool:
+# The volumes that print their numbered section title across the top of the page,
+# where the line this catches is the running head and not the body.
+HEAD_NUMBER = "head-number"
+
+# The grammars the corpus manifest records, and the only words that mean
+# anything here. A word off this list is treated as nothing said, which is what
+# a typo in an environment variable built by another program should cost.
+GRAMMARS = frozenset({HEAD_NUMBER, "head-label", "foot-number"})
+
+
+def heading(line: str, grammar: str = "") -> bool:
     """Whether a line is the body's section heading rather than the page's head.
 
     Asked of the page's first line, so the head gets put in front of it rather
@@ -273,8 +318,27 @@ def heading(line: str) -> bool:
     acceptance rules will take the line. They will, and that is the defect. What
     this says is narrower: whatever else it is, this line is not the line printed
     across the top of the page.
+
+    The American numbering is a question about the volume and cannot be answered
+    without one, which is what `grammar` is. On a `head-number` volume that line
+    is the head: the Historical Note prints `1. FOUNDATIONS OF MATHEMATICS;
+    LOGIC; SET THEORY.    3` across the top of the page and 159 of the 196 lines
+    that match are its. On a volume that puts its number at the foot the head
+    carries a title and no number in front of it, so the same line is the body
+    heading every time.
+
+    Nothing said does not widen, and neither does a word that is not one of the
+    grammars. Four of the six volumes this was measured on are classified in the
+    manifest and the other two are not, and taking the head off 159 pages of the
+    Historical Note because nobody said what it prints is a worse failure than
+    leaving 11 pages of `ac-i-vii` as they are. The manifest is where that is
+    fixed.
     """
-    return HEADING.match(line) is not None
+    if HEADING.match(line) is not None:
+        return True
+    if grammar not in GRAMMARS or grammar == HEAD_NUMBER:
+        return False
+    return NUMBERED.match(line) is not None
 
 
 def reads_as_head(line: str) -> bool:
@@ -310,7 +374,7 @@ def reads_as_head(line: str) -> bool:
     return looks_like_head(line)
 
 
-def missing(text: str) -> bool:
+def missing(text: str, grammar: str = "") -> bool:
     """Whether the reading needs a head put on it.
 
     Deliberately close to the test the acceptance rule applies, so the pass
@@ -334,11 +398,11 @@ def missing(text: str) -> bool:
             continue
         # The body heading first, because it passes the test below. See
         # `heading`: 42 pages open with one and the head is printed above it.
-        return heading(first) or not reads_as_head(first)
+        return heading(first, grammar) or not reads_as_head(first)
     return True  # an empty reading, which has other problems
 
 
-def usable(answer: str) -> str | None:
+def usable(answer: str, grammar: str = "") -> str | None:
     """The head out of what the second look said, or None."""
     lines = [line.strip() for line in answer.strip().splitlines() if line.strip()]
     if not lines:
@@ -346,7 +410,7 @@ def usable(answer: str) -> str | None:
     line = lines[0].strip("`").strip()
     if not line or line.lower() in NOTHING:
         return None
-    if heading(line):
+    if heading(line, grammar):
         # The strip read past the top band into the body of the page, and the
         # body heading is not the head however much it looks like one.
         return None
@@ -571,6 +635,18 @@ class HeadPass:
     None means guess, which is what happens when nobody said. See `wants_label`.
     """
 
+    grammar: str = ""
+    """What this batch's volume prints across the top of a page, as the corpus
+    manifest classifies it: `head-number`, `head-label`, `foot-number`, or empty
+    for a volume nobody has classified.
+
+    A second field beside `head_label` and not a replacement for it. The label
+    question has an answer for a volume with no grammar recorded, which is the
+    guess, and `heading` has no use for a guess. Empty here is not a default that
+    happens to be safe, it is the caller saying nothing, and nothing is what
+    `heading` widens on.
+    """
+
     asked: int = field(default=0, init=False)
     fixed: int = field(default=0, init=False)
     completed: int = field(default=0, init=False)
@@ -615,7 +691,7 @@ class HeadPass:
 
     async def read(self, image: Path, prompt: str) -> str:
         text = await self.inner.read(image, prompt)
-        gone = missing(text)
+        gone = missing(text, self.grammar)
         # A fragment is asked about whatever the volume has shown, because it is
         # not a head on any volume. See the module note: the volume rule cannot
         # reach these pages and on the batches they fall in it never opens.
@@ -651,7 +727,7 @@ class HeadPass:
                 # copy is exactly the page whose reading is worth keeping,
                 # because the reading is the only thing left that came off it.
                 return text
-        head = usable(answer)
+        head = usable(answer, self.grammar)
         if head is None:
             return text
         if not gone:

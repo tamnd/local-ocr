@@ -20,6 +20,7 @@ from local_ocr.batch import Options
 from local_ocr.cli import (
     _budget,
     _head,
+    _head_grammar,
     _head_label,
     _reader,
     _sidecars,
@@ -411,3 +412,61 @@ class TestTheVolumeIsTold:
         assert isinstance(got, HeadPass)
         assert got.head_label is True
         assert got.wants_label(), "told, so nothing has to be learned first"
+
+
+class TestTheVolumeGrammarIsTold:
+    """What the volume prints across the top of a page, in the manifest's word.
+
+    A second question beside the label one and not the same question. The label
+    is a yes or a no, and this is not: a numbered title across the top is the
+    running head on a `head-number` volume and the body's section heading on a
+    `foot-number` one, so a flag cannot carry it.
+    """
+
+    def test_the_manifest_word_is_passed_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for word in ("head-number", "head-label", "foot-number"):
+            monkeypatch.setenv("LOCAL_OCR_HEAD_GRAMMAR", word)
+            assert _head_grammar() == word
+
+    def test_saying_nothing_stays_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LOCAL_OCR_HEAD_GRAMMAR", raising=False)
+        assert _head_grammar() == ""
+
+    def test_whitespace_around_it_is_not_a_word(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LOCAL_OCR_HEAD_GRAMMAR", "  foot-number\n")
+        assert _head_grammar() == "foot-number"
+
+    def test_a_typo_is_passed_through_and_refused_where_it_is_used(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The checking belongs next to the list, which is `headpass.GRAMMARS`."""
+        from local_ocr.headpass import GRAMMARS, heading
+
+        monkeypatch.setenv("LOCAL_OCR_HEAD_GRAMMAR", "footnumber")
+        got = _head_grammar()
+        assert got == "footnumber"
+        assert got not in GRAMMARS
+        assert not heading("5. IMAGE OF A SUMMABLE FAMILY", got)
+
+    def test_it_reaches_the_wrapper(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from local_ocr.headpass import HeadPass
+
+        monkeypatch.setenv("LOCAL_OCR_HEAD_GRAMMAR", "foot-number")
+        monkeypatch.delenv("LOCAL_OCR_HEAD_LABEL", raising=False)
+        monkeypatch.delenv("LOCAL_OCR_HEAD_PASS", raising=False)
+        monkeypatch.delenv("LOCAL_OCR_REFEREE", raising=False)
+        got = _head(object())
+        assert isinstance(got, HeadPass)
+        assert got.grammar == "foot-number"
+
+    def test_an_unclassified_volume_reaches_the_wrapper_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from local_ocr.headpass import HeadPass
+
+        monkeypatch.delenv("LOCAL_OCR_HEAD_GRAMMAR", raising=False)
+        monkeypatch.delenv("LOCAL_OCR_HEAD_PASS", raising=False)
+        monkeypatch.delenv("LOCAL_OCR_REFEREE", raising=False)
+        got = _head(object())
+        assert isinstance(got, HeadPass)
+        assert got.grammar == ""

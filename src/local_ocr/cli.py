@@ -141,7 +141,7 @@ def _head(reader: Reader) -> Reader:
     # means here rather than an option somebody has to know about. The
     # environment variable is for measuring the pass, which is the only reason
     # to turn it off.
-    return HeadPass(reader, head_label=_head_label())
+    return HeadPass(reader, head_label=_head_label(), grammar=_head_grammar())
 
 
 def _head_label() -> bool | None:
@@ -163,6 +163,25 @@ def _head_label() -> bool | None:
     if raw == "0":
         return False
     return None
+
+
+def _head_grammar() -> str:
+    """What this batch's volume prints across the top of a page, if it was said.
+
+    The manifest's own word for it, passed through rather than reduced to a
+    flag. `head_label` above is a flag because the question it answers is a yes
+    or a no, and the question `heading` asks is not: a numbered title across the
+    top of the page is the running head on a `head-number` volume and the body's
+    section heading on a `foot-number` one, and a flag that says no to both
+    cannot tell them apart.
+
+    Passed through unchecked, because the checking belongs where the word is
+    used: `headpass.GRAMMARS` is the list and anything off it counts as nothing
+    said. A volume the manifest has not classified arrives here empty and gets
+    the same treatment, which is the behaviour every run had before this
+    existed.
+    """
+    return os.environ.get("LOCAL_OCR_HEAD_GRAMMAR", "").strip()
 
 
 def _entry(name: str) -> serving.Model | None:
