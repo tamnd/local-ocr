@@ -20,6 +20,7 @@ from local_ocr.batch import (
     refusal_for,
     run,
     write_atomic,
+    write_refusal,
 )
 
 
@@ -230,3 +231,32 @@ def test_write_atomic_leaves_nothing_behind_when_the_answer_is_empty(tmp_path: P
 
 def test_the_refusal_marker_sits_where_the_markdown_would_have(tmp_path: Path) -> None:
     assert refusal_for(Path("out/chapter/0042.md")) == Path("out/chapter/0042.refused")
+
+
+def test_an_answer_clears_the_marker_an_earlier_attempt_left(tmp_path: Path) -> None:
+    # The reader was down for forty two minutes and every page offered to it in
+    # that window got a marker reading "ConnectError: All connection attempts
+    # failed". Those pages went back to the queue with their attempts intact,
+    # which is right, and were read again afterwards, which worked. The retry
+    # landed in the same directory, because a refusal does not spend an attempt
+    # and the batch id is a hash over the attempts, so the marker was still
+    # there next to the new Markdown and the run refused two whole volumes on
+    # the strength of a failure that was over.
+    target = tmp_path / "out" / "0417.md"
+    write_refusal(target, "ConnectError: All connection attempts failed")
+    assert refusal_for(target).exists()
+
+    write_atomic(target, "A VIII.400 LINEAR REPRESENTATIONS OF FINITE GROUPS\n")
+    assert target.read_text().startswith("A VIII.400")
+    assert not refusal_for(target).exists()
+
+
+def test_a_page_that_is_still_refused_keeps_its_marker(tmp_path: Path) -> None:
+    # The clearing is one directional on purpose. An answer is evidence that the
+    # page was read and a marker is evidence that it was not, so an answer may
+    # overrule a marker but a marker may never delete an answer.
+    target = tmp_path / "out" / "0417.md"
+    write_atomic(target, "A VIII.400 LINEAR REPRESENTATIONS OF FINITE GROUPS\n")
+    write_refusal(target, "timed out after 900s")
+    assert target.exists()
+    assert refusal_for(target).exists()

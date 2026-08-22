@@ -149,6 +149,18 @@ def write_atomic(path: Path, text: str) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, path)
+        # The page has been read, so nothing beside it may still say it was not.
+        #
+        # A refusal is deliberately cheap: the run hands the page straight back
+        # with its attempts intact and offers it again later. That retry lands in
+        # the same output directory, because a refusal does not spend an attempt
+        # and the batch id is a hash over the attempts. So the marker from the
+        # failure and the Markdown from the read that followed it end up side by
+        # side, and anything downstream has to decide which of the two is the
+        # truth about the page. It should never have to. Clearing it here is one
+        # unlink at the only point in the program where an answer becomes final.
+        with suppress(OSError):
+            os.unlink(refusal_for(path))
     except BaseException:
         # A failed write leaves nothing behind. Half a page in the output
         # directory is worse than no page, because the run would have to guess
