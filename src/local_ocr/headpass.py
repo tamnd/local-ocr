@@ -49,16 +49,47 @@ That is the one place this module edits a line rather than prepending one, and
 it is the same line read off the same pixels at ten times the size. The guard is
 `completes`: the strip has to carry a label, the page's line has to carry none,
 and the page's line has to be contained in the strip's.
+
+## The fragment
+
+There is a third way to lose the line and it is the largest of the three. The
+reader brings back one end of the head and nothing else: `§ 2` where the page
+prints `§ 2 EXERCICES TG I.91`, `N° 2` where it prints `N° 2 LIMITES TG I.47`.
+That is not a head at all, it is a piece of one, but it answers yes to every
+test above. `parse_section_locator` finds the section marker, so the gate thinks
+the page has its head, and the volume rule above is the only thing that could
+ask about it.
+
+The volume rule cannot. It learns inside one batch, a batch is about fifteen
+pages, and it needs eight before it will believe anything, so it opens two
+thirds of the way through the batch at the earliest. Worse, on the pages this
+defect lands on it never opens at all: the loss is systematic down one side of
+the exercise pages, so half the batch comes back with no page label, the share
+sits at 0.5625 against a threshold of 0.6, and the pages that need the second
+look are the votes keeping it shut. Counted over the batch directories on disk,
+323 readings open with a fragment and the volume rule asked about 13 of them.
+
+So a fragment is recognised for what it is, without reference to the volume. A
+line that reads as a head, carries no page label and holds no word at all is not
+a head any volume prints; a running head has a title in it. Those pages get the
+second look whatever the volume has shown, and the strip's answer goes in place
+of the fragment when it extends it, which is `extends` below.
+
+Asked about all 189 distinct fragment pages on disk, the strip answered with a
+usable head on every one and 173 of them extended the fragment. The other 16 are
+passed through: the strip read the top of the page as something with no piece of
+the fragment in it, and this module does not guess between two readings.
 """
 
 from __future__ import annotations
 
 import io
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from local_ocr.batch import Reader, Refused
+from local_ocr.batch import Reader
 from local_ocr.rules.validate import (
     LONGEST_HEAD,
     looks_like_head,
@@ -212,6 +243,63 @@ def labelled(text: str) -> bool:
     return parse_page_label(_first(text)) is not None
 
 
+# A word, for the purpose of deciding that a line has a title in it. Three
+# letters rather than one because a Bourbaki head prints ordinals and section
+# markers around the title, N° and Ch and no, and none of those is the title. Of
+# the 189 fragment pages on disk the longest run of letters in any of them is
+# two, and the shortest title word in a head read off the same volumes is four,
+# so nothing on this corpus sits near the boundary.
+#
+# It matches letters and not \\w, because \\w takes digits and underscores and a
+# bare folio is exactly what must not count as a word here.
+WORD = re.compile(r"[^\W\d_]{3,}", re.UNICODE)
+
+
+def fragment(line: str) -> bool:
+    """Whether a line is a piece of a running head rather than one.
+
+    See the module note. A head has a title in it and this line has no word at
+    all, so whatever it is, no volume prints it across the top of a page on its
+    own. The page label is excluded because a line carrying one has already been
+    read well enough to file the page under, and the rest of the head is what
+    `completes` is for.
+
+    Deliberately not part of `reads_as_head`. That test answers whether the
+    acceptance rules will take the line, and a fragment is a line they take and
+    should not; changing it there would reject the page instead of repairing it,
+    which is the wrong direction. The whole point of this module is that a page
+    with a bad first line is worth a second look and not a rejection.
+    """
+    line = line.strip()
+    return reads_as_head(line) and parse_page_label(line) is None and WORD.search(line) is None
+
+
+def extends(head: str, text: str) -> bool:
+    """Whether the strip's answer is the page's fragment with the rest put back.
+
+    The fragment has to be one end of the strip's head, on the letters and
+    digits alone. One end rather than anywhere in it, because that is where the
+    reader keeps the piece from: the head prints its title between a section
+    marker and a page label, and what survives is the marker or the label, never
+    the middle. Measured over the 173 pages this accepts, every one of them has
+    the fragment at an end, so the tighter test costs nothing and it refuses a
+    class the looser one would take: a fragment of one digit is inside almost
+    any head, including one belonging to a different section.
+
+    Over the head with its page label cut out, for the reason `completes` gives:
+    a one character key against a head that carries `A I.119` is satisfied by the
+    digits of the label and says nothing about whether the two agree.
+
+    A strip that hands back the fragment and no more extends nothing, so the
+    length test is not decoration.
+    """
+    key = _key(_first(text))
+    whole = _key(_unlabelled(head))
+    if not key or len(whole) <= len(key):
+        return False
+    return whole.startswith(key) or whole.endswith(key)
+
+
 def completes(head: str, text: str) -> bool:
     """Whether the strip answer is the page's own head with its label put back.
 
@@ -327,6 +415,9 @@ class HeadPass:
     completed: int = field(default=0, init=False)
     """Pages whose head was there but had lost its label. See the module note."""
 
+    mended: int = field(default=0, init=False)
+    """Pages that came back with a piece of the head. See the module note."""
+
     seen: int = field(default=0, init=False)
     labels: int = field(default=0, init=False)
     """What this batch has shown about the volume: how many readings went past
@@ -352,30 +443,56 @@ class HeadPass:
         if labelled(text):
             self.labels += 1
         gone = missing(text)
-        if not gone and not (self.wants_label() and not labelled(text)):
+        # A fragment is asked about whatever the volume has shown, because it is
+        # not a head on any volume. See the module note: the volume rule cannot
+        # reach these pages and on the batches they fall in it never opens.
+        piece = fragment(_first(text))
+        if not gone and not piece and not (self.wants_label() and not labelled(text)):
             return text
         self.asked += 1
         with TemporaryDirectory(prefix="local-ocr-head-") as scratch:
-            strip = band(image, Path(scratch) / "head.png", self.fraction)
             try:
+                strip = band(image, Path(scratch) / "head.png", self.fraction)
                 answer = await self.inner.read(strip, self.prompt)
                 self._keep(image, strip)
-            except Refused:
+            except Exception:
                 # The page itself was read. A failed second look leaves a page
                 # without a head, which the acceptance rules will reject and
                 # somebody will read again, and that is a better outcome than
                 # throwing away a reading that exists.
+                #
+                # Everything and not just Refused, and the crop inside the guard
+                # rather than in front of it. The crop opens the page image a
+                # second time and it can fail on its own: an image Pillow will
+                # not decode raised straight out of here and the batch turned a
+                # page it had read into a refused one. Which pages those are is
+                # the worst part of it. A page image truncated by an interrupted
+                # copy is exactly the page whose reading is worth keeping,
+                # because the reading is the only thing left that came off it.
                 return text
         head = usable(answer)
         if head is None:
             return text
         if not gone:
-            # The page has a head and it is short of its label. Only the strip's
+            # The page has a head and it is short of something. Only the strip's
             # own reading of that same head goes in its place.
-            if not completes(head, text):
-                return text
-            self.completed += 1
-            return _replace_first(head, text)
+            #
+            # Which guard applies is decided by what is wrong with the page and
+            # not by which test happens to pass. The two overlap: on a head-label
+            # volume a fragment carries no label either, so `completes` accepts
+            # 103 of the 189 fragment pages on disk and would count them as lost
+            # labels. They are not. The line is a piece of a head, the repair is
+            # the fragment one, and the counters are the only account anybody
+            # gets of what the second look did.
+            if piece:
+                if not extends(head, text):
+                    return text
+                self.mended += 1
+                return _replace_first(head, text)
+            if completes(head, text):
+                self.completed += 1
+                return _replace_first(head, text)
+            return text
         if _same(head, text):
             # The gate thought the page had no head and the strip disagreed by
             # handing back the line the page already opens with. Prepending it

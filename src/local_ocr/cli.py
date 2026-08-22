@@ -300,6 +300,8 @@ def ocr_batch(argv: Sequence[str], reader: Reader | None = None) -> int:
         line = f"head pass: asked on {head.asked} pages, put a head on {head.fixed}"
         if head.completed:
             line += f", put a lost page label back on {head.completed}"
+        if head.mended:
+            line += f", put the rest of the head back on {head.mended}"
         log(line)
     return 0 if summary.ok else 1
 
