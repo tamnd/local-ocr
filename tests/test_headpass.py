@@ -14,7 +14,16 @@ from pathlib import Path
 import pytest
 
 from local_ocr.batch import Refused
-from local_ocr.headpass import PROMPT, HeadPass, band, completes, missing, usable
+from local_ocr.headpass import (
+    PROMPT,
+    HeadPass,
+    band,
+    completes,
+    extends,
+    fragment,
+    missing,
+    usable,
+)
 
 HEADED = "ARTINIAN MODULES AND NOETHERIAN MODULES A VIII.10\n\nPROPOSITION 7. Let A be a ring.\n"
 BARE = "PROPOSITION 7. Let A be a ring, and let X be an indeterminate over it.\n"
@@ -247,6 +256,38 @@ class TestPass:
         stub = Declines()
         assert asyncio.run(HeadPass(stub).read(page, "read this")) == BARE
         assert stub.calls == 2
+
+    def test_a_page_image_the_cropper_cannot_open_does_not_lose_its_reading(
+        self, tmp_path: Path
+    ) -> None:
+        """The crop opens the page a second time and it can fail on its own.
+
+        Five pages of the contract run were read and then thrown away, because
+        an image Pillow will not decode raised out of the second look and the
+        batch recorded a refusal for a page it had in hand. The pages this
+        happens to are the ones whose reading is worth most: a page image
+        truncated by an interrupted copy has nothing else left that came off it.
+        """
+        broken = tmp_path / "0027.png"
+        broken.write_bytes(b"\x89PNG and then nothing that decodes")
+        stub = Stub()
+        reader = HeadPass(stub)
+        assert asyncio.run(reader.read(broken, "read this")) == BARE
+        assert reader.asked == 1 and reader.fixed == 0
+        assert len(stub.seen) == 1, "the strip was never asked for"
+
+    def test_a_second_look_that_dies_on_the_wire_does_not_lose_the_page(self, page: Path) -> None:
+        class Drops:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def read(self, image: Path, prompt: str) -> str:
+                self.calls += 1
+                if self.calls == 1:
+                    return BARE
+                raise ConnectionError("all connection attempts failed")
+
+        assert asyncio.run(HeadPass(Drops()).read(page, "read this")) == BARE
 
     def test_a_refused_first_look_is_still_a_refusal(self, page: Path) -> None:
         class Never:
@@ -503,3 +544,123 @@ class TestThePrompt:
         """A front matter page prints no head and must be allowed to say so."""
         assert "NONE" in PROMPT
         assert usable("NONE") is None
+
+
+PIECE = "§ 2\n\nPROPOSITION 7. Let A be a ring, and let X be an indeterminate over it.\n"
+
+
+class TestFragment:
+    """One end of the head and nothing else, which every other test here takes for a head."""
+
+    def test_a_section_marker_on_its_own_is_a_piece_of_a_head(self) -> None:
+        for line in ("§ 2", "§ 10", "§ 5.", "N° 2", "§ 3, n° 1"):
+            assert fragment(line), line
+
+    def test_a_head_with_a_title_in_it_is_not(self) -> None:
+        for line in ("§ 2 EXERCICES TG I.91", "ANNEAUX", "Exercices", "TABLE DES MATIERES"):
+            assert not fragment(line), line
+
+    def test_a_line_carrying_a_page_label_is_not(self) -> None:
+        """It is already enough to file the page under, and completes owns the rest."""
+        assert not fragment("A I.109")
+
+    def test_a_paragraph_is_not_a_fragment_either(self) -> None:
+        """Whatever is wrong with a page of prose, prepending a head is the repair for it."""
+        assert not fragment(BARE.strip())
+
+    def test_the_reading_that_cost_the_measurement(self) -> None:
+        """323 readings on disk open with one of these and the volume rule asked about 13."""
+        assert missing(PIECE) is False, "which is why nothing else here catches it"
+        assert fragment("§ 2")
+
+
+class TestExtends:
+    """The guard on the fragment repair, which is the whole of what makes it safe."""
+
+    def test_the_fragment_has_to_be_one_end_of_the_strip_head(self) -> None:
+        assert extends("§ 2 EXERCICES TG I.91", PIECE)
+        assert extends("AC VIII.84 DIMENSION § 2", PIECE)
+
+    def test_a_head_belonging_to_another_section_is_refused(self) -> None:
+        assert not extends("§ 5 EXERCICES TG I.97", PIECE)
+
+    def test_a_digit_buried_in_the_middle_does_not_count(self) -> None:
+        """A one character key is inside almost any head, so anywhere is not enough."""
+        assert not extends("§ 5 EXERCICES 2 BIS TG I.97", PIECE)
+
+    def test_a_strip_that_hands_back_the_fragment_extends_nothing(self) -> None:
+        assert not extends("§ 2", PIECE)
+
+    def test_the_label_digits_do_not_answer_for_the_fragment(self) -> None:
+        """TG I.92 ends in a 2 and that says nothing about the section."""
+        assert not extends("SOMETHING ELSE TG I.92", PIECE)
+
+    def test_the_spacing_and_the_case_do_not_decide_it(self) -> None:
+        assert extends("§ 2   Exercices   TG I.91", PIECE)
+
+
+class TestTheFragmentRepair:
+    """The repair end to end, on a volume the old gate would never have opened for."""
+
+    def walk(self, reader: HeadPass, page: Path, count: int) -> list[str]:
+        return [asyncio.run(reader.read(page, "read this")) for _ in range(count)]
+
+    def test_the_rest_of_the_head_is_put_back(self, page: Path) -> None:
+        inner = Volume([PIECE], head="§ 2 EXERCICES TG I.91")
+        reader = HeadPass(inner)
+        out = self.walk(reader, page, 1)[-1]
+        assert inner.strips == 1
+        assert out.startswith("§ 2 EXERCICES TG I.91\n")
+        assert reader.mended == 1
+        assert reader.fixed == 0 and reader.completed == 0
+
+    def test_it_does_not_wait_for_the_volume_to_show_anything(self, page: Path) -> None:
+        """The point of it. The volume rule needs eight pages and never opens on these.
+
+        Half of an exercises batch comes back with no page label, so the share
+        sits at 0.5625 against a threshold of 0.6 and the pages that need the
+        second look are the votes keeping it shut.
+        """
+        reader = HeadPass(Volume([PIECE], head="§ 2 EXERCICES TG I.91"))
+        self.walk(reader, page, 1)
+        assert not reader.wants_label(), "one page, so it has shown nothing at all"
+        assert reader.mended == 1
+
+    def test_the_body_is_left_exactly_as_it_arrived(self, page: Path) -> None:
+        reader = HeadPass(Volume([PIECE], head="§ 2 EXERCICES TG I.91"))
+        out = self.walk(reader, page, 1)[-1]
+        assert out.split("\n", 1)[1] == PIECE.split("\n", 1)[1]
+
+    def test_a_strip_answering_a_different_head_changes_nothing(self, page: Path) -> None:
+        reader = HeadPass(Volume([PIECE], head="§ 5 EXERCICES TG I.97"))
+        assert self.walk(reader, page, 1)[-1] == PIECE
+        assert reader.mended == 0
+        assert reader.asked == 1
+
+    def test_a_strip_with_no_head_on_it_changes_nothing(self, page: Path) -> None:
+        reader = HeadPass(Volume([PIECE], head="NONE"))
+        assert self.walk(reader, page, 1)[-1] == PIECE
+        assert reader.mended == 0
+
+    def test_a_head_that_is_whole_is_never_asked_about(self, page: Path) -> None:
+        reader = HeadPass(Volume([WHOLE]))
+        assert self.walk(reader, page, 1)[-1] == WHOLE
+        assert reader.asked == 0 and reader.mended == 0
+
+    def test_a_foot_number_volume_keeps_the_repair(self, page: Path) -> None:
+        """No page label anywhere, so completes can never fire and this still can.
+
+        13 of the 189 fragment pages are on volumes that print a bare folio or
+        nothing at all, and the label test refuses every one of them.
+        """
+        reader = HeadPass(Volume([PIECE], head="§ 2 EXERCICES 67"))
+        out = self.walk(reader, page, 1)[-1]
+        assert out.startswith("§ 2 EXERCICES 67\n")
+        assert reader.mended == 1
+
+    def test_the_run_line_says_what_it_did(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        reader = HeadPass(Volume([PIECE], head="§ 2 EXERCICES TG I.91"))
+        out = TestBatchLine().run(tmp_path, reader, capsys)
+        assert "put the rest of the head back on 1" in out
