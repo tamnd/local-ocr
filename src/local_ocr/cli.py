@@ -342,6 +342,8 @@ def ocr_batch(argv: Sequence[str], reader: Reader | None = None) -> int:
             line += f", put a lost page label back on {head.completed}"
         if head.mended:
             line += f", put the rest of the head back on {head.mended}"
+        if head.edged:
+            line += f", read the page label off one end of the strip on {head.edged}"
         log(line)
     return 0 if summary.ok else 1
 
