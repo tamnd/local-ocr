@@ -488,6 +488,68 @@ def residual_cmd(argv: Sequence[str]) -> int:
     return 0
 
 
+def rlvr_signal_cmd(argv: Sequence[str]) -> int:
+    """Whether the gate suite carries a reward, which is section 08's other precondition."""
+    from local_ocr import golden, rlvr
+
+    parser = argparse.ArgumentParser(prog=f"{PROG} rlvr-signal")
+    parser.add_argument("--set", dest="set_name", default="golden-dev", help="which golden set")
+    parser.add_argument("--readings", type=Path, default=None, metavar="DIR")
+    parser.add_argument(
+        "--history",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="a queue stage directory, for the group spread of real resamples",
+    )
+    parser.add_argument("--corpus", type=Path, default=None)
+    parser.add_argument("--markdown", dest="markdown_path", type=Path, default=None)
+    parser.add_argument(
+        "--purpose", choices=[p.value for p in golden.Purpose], default="development"
+    )
+    args = parser.parse_args(list(argv))
+
+    if args.readings is None and args.history is None:
+        print(f"{PROG}: rlvr-signal needs --readings, --history, or both", file=sys.stderr)
+        return 2
+
+    fired = None
+    if args.readings is not None:
+        try:
+            pages = golden.load(
+                args.set_name, purpose=golden.Purpose(args.purpose), corpus=args.corpus
+            )
+        except (golden.Burned, KeyError, NoCorpus) as err:
+            print(f"{PROG}: {err}", file=sys.stderr)
+            return 2
+        fired = rlvr.fires(pages, args.readings)
+
+    moved = None
+    if args.history is not None:
+        if not args.history.is_dir():
+            print(f"{PROG}: no queue at {args.history}", file=sys.stderr)
+            return 2
+        counted, moved = rlvr.queue(args.history)
+        # No groups at all is the queue format having moved under the reader,
+        # not a queue where nothing was ever read. Saying so beats printing a
+        # very clean nought per cent.
+        if moved.groups == 0:
+            print(f"{PROG}: {args.history} holds no job with a recorded answer", file=sys.stderr)
+            return 1
+        # Only when there are no readings to score. Text beats reasons, and a
+        # report carrying both tables would invite them to be added up.
+        fired = fired or counted
+
+    text = rlvr.report(fired, moved)
+    if args.markdown_path is None:
+        print(text)
+    else:
+        args.markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown_path.write_text(text, encoding="utf-8")
+        print(f"{PROG}: written to {args.markdown_path}", file=sys.stderr)
+    return 0
+
+
 def _drift(path: Path | None) -> list[str]:
     if path is None:
         return []
@@ -1278,6 +1340,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return golden_cmd(rest)
     if command == "residual":
         return residual_cmd(rest)
+    if command == "rlvr-signal":
+        return rlvr_signal_cmd(rest)
     if command == "kvant":
         return kvant_cmd(rest)
     if command == "serve":
@@ -1305,6 +1369,7 @@ def _usage() -> str:
         "  eval --set S --readings D   judge readings against a golden set\n"
         "  golden draw|check|show      the four golden sets and their drift\n"
         "  residual --readings D  what the prompt did not fix, convention or capability\n"
+        "  rlvr-signal --history D     whether the gate suite carries a reward at all\n"
         "  kvant draw|check|show|pages|eval|rotated  the Russian tier B set\n"
         "  serve <model>          start a shortlisted reader under vLLM\n"
         "  pages --set S          rasterise a golden set into the corpus images tree\n"
