@@ -15,10 +15,12 @@ import pytest
 
 from local_ocr.batch import Refused
 from local_ocr.headpass import (
+    EXAMPLES,
     PROMPT,
     HeadPass,
     band,
     completes,
+    echoed,
     extends,
     fragment,
     heading,
@@ -806,3 +808,45 @@ class TestTheVolume:
         self.walk(reader, page, 12)
         assert reader.seen == 12 and reader.labels == 0
         assert not reader.wants_label()
+
+
+class TestThePromptComingBack:
+    """The reader handing back the prompt's own example instead of an answer.
+
+    17 readings across 15 volumes open with the first example, on books where
+    those words are printed nowhere. The example arrives with its number gone,
+    which is what separates it from the page it was taken off.
+    """
+
+    def test_an_example_with_its_number_gone_is_the_prompt_coming_back(self) -> None:
+        assert echoed("ALGEBRAIC STRUCTURES Ch. I")
+        assert echoed("N EXTENSIONS GALOISIENNES A V.")
+
+    def test_the_example_entire_is_a_real_head(self) -> None:
+        """Both are printed on a real page and that page is entitled to say so."""
+        for example in EXAMPLES:
+            assert not echoed(example), example
+
+    def test_every_example_is_one_the_prompt_actually_shows(self) -> None:
+        """The guard and the wording read from the same place, so they cannot drift."""
+        for example in EXAMPLES:
+            assert example in PROMPT, example
+
+    def test_the_head_the_example_was_taken_off_is_left_alone(self) -> None:
+        """47 pages of alg-i-iii print this and not one of them prints Ch. I."""
+        assert not echoed("ALGEBRAIC STRUCTURES")
+        assert not echoed("I ALGEBRAIC STRUCTURES")
+        assert not echoed("18 ALGEBRAIC STRUCTURES")
+
+    def test_it_reads_past_case_and_punctuation(self) -> None:
+        for line in (
+            "algebraic structures ch. i",
+            "ALGEBRAIC STRUCTURES, Ch I",
+            "`ALGEBRAIC STRUCTURES Ch. I`",
+        ):
+            assert echoed(line.strip("`")), line
+
+    def test_the_second_look_is_thrown_away(self) -> None:
+        """No head is a better answer than another volume's head."""
+        assert usable("ALGEBRAIC STRUCTURES Ch. I") is None
+        assert usable("N EXTENSIONS GALOISIENNES A V.") is None

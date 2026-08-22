@@ -139,6 +139,30 @@ open instead was measured too and rejected: it asks about 1643 pages on the
 volumes that print no label, and on a sample of 40 of them the strip changed
 nothing at all, because `completes` wants a label in the answer and those
 volumes print none. Zero harm and 1643 crops is not a trade, it is a waste.
+
+## The prompt coming back
+
+A prompt that shows the reader an example is a prompt the reader can hand back.
+Across the 4520 pages read so far, 17 readings on 15 different volumes open with
+`ALGEBRAIC STRUCTURES Ch. I`, which is the first example out of this module's
+prompt, on Commutative Algebra, Lie, Integration, Topology and the Historical
+Note, where those words are printed nowhere. Two pages of `alg-iv-vii` go
+further and carry the whole production OCR prompt as their body, so the echo is
+not something this module invented, but this module hands it a line to sit on.
+
+Refused in `usable`, where an answer that is an example is treated as no answer,
+which leaves the page alone rather than putting somebody else's title on it. The
+test is the example with its numbers taken out, compared whole. That is exactly
+the form the echo arrives in and it is not a form a real page produces: the 47
+pages of `alg-i-iii` that really do print `ALGEBRAIC STRUCTURES` never print the
+` Ch. I`, and a strip that prints the example for real prints the folio with it.
+Nothing on disk matches an example entire.
+
+Why the reader does it is not settled. Asked again for the strips of five of the
+17 at 150 and 300 dpi, the live reader answered NONE every time, and the images
+those batches used are rendered and deleted, so the ones that produced it are
+gone. The guard is worth having either way, because it costs a page nothing to
+be left alone.
 """
 
 from __future__ import annotations
@@ -188,14 +212,19 @@ BAND = 0.12
 # label went from 15 to 22. Counting only the 24 pages that print a label at all,
 # from 15 to 22 again, and no strip that answered with a label under the old
 # wording lost it under the new one.
+# The two heads the prompt shows the reader. Named rather than written into the
+# wording, because `echoed` has to know what they are and a second copy of them
+# would drift away from the first one the next time the prompt is reworded.
+EXAMPLES = ("18 ALGEBRAIC STRUCTURES Ch. I", "N 2 EXTENSIONS GALOISIENNES A V.57")
+
 PROMPT = (
     "This image is the strip across the very top of a printed page. "
     "Reply with the running head printed there, exactly as printed, on one line, "
     "and nothing else. Transcribe the whole line from its left edge to its right edge, "
     "including whatever is printed at either end: a page number, a page reference such as "
     "A V.113, a section marker such as N degree 2 or a section sign and its number. "
-    "A strip printing 18 ALGEBRAIC STRUCTURES Ch. I is answered with the 18 and not without it, "
-    "and a strip printing N 2 EXTENSIONS GALOISIENNES A V.57 is answered with all three parts "
+    f"A strip printing {EXAMPLES[0]} is answered with the 18 and not without it, "
+    f"and a strip printing {EXAMPLES[1]} is answered with all three parts "
     "and not with the middle part on its own. "
     "Reply NONE if the strip holds no running head."
 )
@@ -321,7 +350,32 @@ def usable(answer: str) -> str | None:
         # The strip read past the top band into the body of the page, and the
         # body heading is not the head however much it looks like one.
         return None
+    if echoed(line):
+        # The reader handed back the example out of the prompt instead of NONE.
+        return None
     return line if reads_as_head(line) else None
+
+
+def echoed(line: str) -> bool:
+    """Whether a line is one of the prompt's own examples handed back as an answer.
+
+    Matched against the examples with their numbers taken out, because that is
+    the form the reader hands back. A near blank strip sometimes comes back as
+    `ALGEBRAIC STRUCTURES Ch. I` rather than NONE, and the 18 is dropped on the
+    way, which is the tell. The strip that really prints that head prints the
+    folio with it.
+
+    Compared whole and not by containment, because both examples are real
+    running heads on the volumes they were taken off. 47 pages of `alg-i-iii`
+    open with `ALGEBRAIC STRUCTURES`, some of them with the volume numeral in
+    front, and every one of them is a page that says so. Not one carries the
+    ` Ch. I` that the prompt's example carries. Across the 4520 pages read so
+    far nothing matches an example entire and 17 match one stripped, on volumes
+    of Commutative Algebra, Lie, Integration, Topology and the Historical Note
+    where the words appear nowhere in the book.
+    """
+    key = _key(line)
+    return any(key == _key(re.sub(r"\d+", "", example)) for example in EXAMPLES)
 
 
 # How many pages go past before the wrapper will believe anything about what
