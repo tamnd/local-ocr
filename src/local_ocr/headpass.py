@@ -81,12 +81,31 @@ BAND = 0.12
 # habit that loses the head in the first place: a document model is trained to
 # treat a folio as furniture. The folio is half of what the head is for here,
 # because it is what the page is filed under.
+#
+# Calling out the page number was not enough, because a Bourbaki head has three
+# parts and not two. The volumes print "N° 4  EXTENSIONS TRANSCENDANTES  A
+# V.107" on the odd page and "A V.130  CORPS COMMUTATIFS  § 16" on the even
+# one, and asked for the head with its page number the model returned the
+# middle part alone on the odd pages: EXTENSIONS TRANSCENDANTES, no number at
+# either end. On the alg-iv-vii-fr window of 22 August that cost 62 of 118
+# readings their page label, and on a head-label volume a head with no label is
+# a page rule 4 rejects.
+#
+# So the instruction now names both ends and gives an example of each shape. Run
+# side by side against the old wording over 26 live page strips, 10 off
+# alg-iv-vii-fr and 16 off alg-iv-vii, the strips that came back carrying a page
+# label went from 15 to 22. Counting only the 24 pages that print a label at all,
+# from 15 to 22 again, and no strip that answered with a label under the old
+# wording lost it under the new one.
 PROMPT = (
     "This image is the strip across the very top of a printed page. "
     "Reply with the running head printed there, exactly as printed, on one line, "
-    "and nothing else. Include the page number if one is printed in the strip, "
-    "on the side it is printed on, so that a strip printing "
-    "18 ALGEBRAIC STRUCTURES Ch. I is answered with the 18 and not without it. "
+    "and nothing else. Transcribe the whole line from its left edge to its right edge, "
+    "including whatever is printed at either end: a page number, a page reference such as "
+    "A V.113, a section marker such as N degree 2 or a section sign and its number. "
+    "A strip printing 18 ALGEBRAIC STRUCTURES Ch. I is answered with the 18 and not without it, "
+    "and a strip printing N 2 EXTENSIONS GALOISIENNES A V.57 is answered with all three parts "
+    "and not with the middle part on its own. "
     "Reply NONE if the strip holds no running head."
 )
 

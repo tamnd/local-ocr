@@ -479,3 +479,27 @@ class TestUsage:
         reader = HeadPass(Angry())
         assert "A VIII.10" in asyncio.run(reader.read(page, "read this"))
         assert reader.usage(page) is None
+
+
+class TestThePrompt:
+    """The strip instruction is the whole of what the pass can control.
+
+    Nothing here checks wording for its own sake. Each of these is a shape the
+    prompt lost a measurement to, so a rewrite that drops one of them is a
+    rewrite that puts back a defect somebody already paid for.
+    """
+
+    def test_it_asks_for_both_ends_of_the_line(self) -> None:
+        """A Bourbaki head has three parts and the middle one is the trap."""
+        assert "left edge to its right edge" in PROMPT
+        assert "either end" in PROMPT
+
+    def test_it_gives_an_example_of_each_head_shape(self) -> None:
+        """The two-part English head and the three-part French one."""
+        assert "18 ALGEBRAIC STRUCTURES Ch. I" in PROMPT
+        assert "EXTENSIONS GALOISIENNES" in PROMPT
+
+    def test_it_still_offers_a_way_out(self) -> None:
+        """A front matter page prints no head and must be allowed to say so."""
+        assert "NONE" in PROMPT
+        assert usable("NONE") is None
