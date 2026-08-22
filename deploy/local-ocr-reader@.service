@@ -50,6 +50,14 @@ TimeoutStopSec=60
 # call that a failed start and kill it halfway through.
 TimeoutStartSec=900
 
+# Covers a reader that dies. Does not cover a reader that stops working without
+# dying, which is the failure this project has actually had twice: once a clean
+# shutdown, which is not a failure and does not trigger this, and once an engine
+# wedged at nought per cent still holding the whole card, which does not exit at
+# all. WatchdogSec is the systemd answer to the second one and it needs the
+# service to call sd_notify, which vLLM does not. reader-watch.sh in this
+# directory is the answer instead: it asks the engine for a token and restarts
+# this unit when the engine stops giving one.
 Restart=on-failure
 RestartSec=15
 
