@@ -738,6 +738,89 @@ class TestTheBodyHeading:
         assert usable("§ 5. APPLICATIONS OUVERTES ET APPLICATIONS FERMÉES") is None
 
 
+AMERICAN = (
+    "5. IMAGE OF A SUMMABLE FAMILY UNDER A CONTINUOUS HOMOMORPHISM\n\n"
+    "Let G and G' be two commutative topological groups.\n"
+)
+
+
+class TestTheAmericanNumbering:
+    """The same body heading on a volume that leaves the section sign off it.
+
+    `top-i-iv` prints `5. IMAGE OF A SUMMABLE FAMILY UNDER A CONTINUOUS
+    HOMOMORPHISM` a third of the way down page 273 and every test above says it
+    is the head. The line cannot be judged on its own: on a volume that prints
+    its numbered section title across the top of the page it is the head, and on
+    a volume that puts the number at the foot it is the body. So the volume is
+    asked, and a volume that has not been classified is not guessed at.
+    """
+
+    def test_a_volume_that_numbers_at_the_foot_calls_it_the_body(self) -> None:
+        for line in (
+            "5. IMAGE OF A SUMMABLE FAMILY UNDER A CONTINUOUS HOMOMORPHISM",
+            "3. Modules of finite length.",
+            "12. THE ASSOCIATED GRADED RING",
+        ):
+            assert heading(line, "foot-number"), line
+
+    def test_a_volume_that_numbers_across_the_top_calls_it_the_head(self) -> None:
+        """The Historical Note prints exactly this line as its running head."""
+        assert not heading("1. FOUNDATIONS OF MATHEMATICS; LOGIC; SET THEORY.    3", "head-number")
+        assert not heading("5. IMAGE OF A SUMMABLE FAMILY UNDER A CONTINUOUS", "head-number")
+
+    def test_a_volume_nobody_classified_is_left_alone(self) -> None:
+        """Empty is the caller saying nothing, and nothing does not widen."""
+        assert not heading("5. IMAGE OF A SUMMABLE FAMILY UNDER A CONTINUOUS HOMOMORPHISM")
+
+    def test_a_word_that_is_not_a_grammar_counts_as_nothing_said(self) -> None:
+        """A typo in an environment variable should cost what silence costs."""
+        for word in ("footnumber", "foot number", "FOOT-NUMBER", "1", "yes"):
+            assert not heading("5. IMAGE OF A SUMMABLE FAMILY", word), word
+
+    def test_a_folio_is_not_a_numbered_heading_on_any_volume(self) -> None:
+        """It opens with a number and there is no stop after it."""
+        for grammar in ("foot-number", "head-number", "head-label", ""):
+            for line in (
+                "18 ALGEBRAIC STRUCTURES Ch. I",
+                "273 SUMMABLE FAMILIES TG III.38",
+                "2 ANNEAUX ET CORPS A I.109",
+            ):
+                assert not heading(line, grammar), (grammar, line)
+
+    def test_a_bare_number_with_a_stop_and_nothing_after_it_is_not_a_heading(self) -> None:
+        """Something has to follow the stop, the same as for `§ 5.`."""
+        assert not heading("5.", "foot-number")
+        assert not heading("5. ", "foot-number")
+
+    def test_the_section_sign_still_carries_on_every_volume(self) -> None:
+        """The grammar widens what counts and takes nothing away."""
+        for grammar in ("foot-number", "head-number", "head-label", ""):
+            assert heading("§ 5. APPLICATIONS OUVERTES ET APPLICATIONS FERMÉES", grammar), grammar
+
+    def test_the_page_is_treated_as_having_no_head(self) -> None:
+        assert missing(AMERICAN, "foot-number")
+        assert not missing(AMERICAN, "head-number")
+        assert not missing(AMERICAN)
+
+    def test_a_strip_that_read_past_the_band_is_refused(self) -> None:
+        assert usable("5. IMAGE OF A SUMMABLE FAMILY UNDER A CONTINUOUS", "foot-number") is None
+        assert usable("5. IMAGE OF A SUMMABLE FAMILY UNDER A CONTINUOUS", "head-number") is not None
+
+    def test_the_head_goes_in_front_and_the_heading_stays_in_the_body(self, page: Path) -> None:
+        reader = HeadPass(
+            Volume([AMERICAN], head="TG III.38 SUMMABLE FAMILIES"), grammar="foot-number"
+        )
+        out = asyncio.run(reader.read(page, "read this"))
+        assert out.startswith("TG III.38 SUMMABLE FAMILIES\n\n")
+        assert out.endswith(AMERICAN)
+        assert reader.fixed == 1 and reader.mended == 0
+
+    def test_the_same_page_on_an_unclassified_volume_is_not_touched(self, page: Path) -> None:
+        reader = HeadPass(Volume([AMERICAN], head="TG III.38 SUMMABLE FAMILIES"))
+        assert asyncio.run(reader.read(page, "read this")) == AMERICAN
+        assert reader.asked == 0 and reader.fixed == 0
+
+
 class TestTheVolume:
     """Who decides whether the volume prints a page label, and on what evidence.
 
